@@ -1,0 +1,563 @@
+/* ========== Card Grid ========== */
+/* 整个 #card-grid 是一个统一的 grid；每页 .page-chunk 用 display:contents
+   让里面的卡片透传成 #card-grid 的直接子元素，实现跨页连续排列，
+   不再有页末补空列 / 页间错位的问题。 */
+#card-grid {
+    max-width: 1800px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-5);
+}
+/* 超宽屏(2K/4K)：放宽容器上限，让卡片网格用满空间而不是留大片留白。
+   虚拟网格的列数从 clientWidth/240 自动算，撑宽即多排一列，无需改 JS。 */
+@media (min-width: 2150px) {
+    #card-grid { max-width: 2200px; }
+}
+@media (min-width: 3000px) {
+    #card-grid { max-width: 2800px; }
+}
+
+/* ========== A-Z 字母条 ========== */
+.alpha-bar {
+    position: fixed;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: var(--z-sidebar);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: var(--space-1) 2px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    box-shadow: var(--shadow);
+    user-select: none;
+}
+.alpha-bar[hidden] { display: none; }
+.alpha-letter {
+    width: 18px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: var(--radius-xs);
+    color: var(--text-secondary);
+    font-size: var(--text-2xs);
+    font-weight: var(--weight-semibold);
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    transition: color var(--transition-fast), background var(--transition-fast);
+}
+.alpha-letter:hover:not(.disabled) {
+    color: var(--accent);
+    background: var(--accent-glow);
+}
+.alpha-letter.disabled {
+    color: var(--text-muted);
+    opacity: 0.35;
+    cursor: default;
+}
+/* 矮屏放不下 27 个字母时收起，避免溢出/重叠 */
+@media (max-height: 560px) {
+    .alpha-bar { display: none !important; }
+}
+
+/* 每页一层透传容器：display:contents 让多页卡片连续排进同一个 #card-grid，
+   视口外卡片的性能优化交给 .model-card 的 content-visibility（浏览器原生）。 */
+.page-chunk {
+    display: contents;
+}
+
+/* ========== 虚拟滚动模式（virtual-grid.js）========== */
+/* 取消 grid 布局：卡片由 JS 绝对定位，spacer 撑出「全部模型」的完整高度，
+   DOM 里只保留可视窗口的几十张卡 → 滚动条满高、中键秒到底、任意规模都丝滑。 */
+#card-grid.vg-active {
+    display: block;
+    position: relative;
+}
+#card-grid.vg-active + #scroll-sentinel { display: none; }
+.vg-spacer { width: 100%; pointer-events: none; }
+
+/* 固定高度卡片：高度由 JS 设（卡宽×4/3 预览 + 124px 信息条）。预览占剩余、信息条定高裁剪。 */
+.model-card.vg-item {
+    margin: 0;
+    content-visibility: visible;   /* 只渲染可视窗口，无需原生跳过 */
+    contain-intrinsic-size: auto;
+    display: flex;
+    flex-direction: column;
+    /* 关键：基类 transition:all 会让 JS 设的 top/left 在滚动时产生滑动动画 → 只过渡视觉属性 */
+    transition: transform var(--transition-slow), border-color var(--transition-slow), box-shadow var(--transition-slow);
+}
+.model-card.vg-item .card-preview {
+    flex: 1 1 auto;
+    min-height: 0;
+    aspect-ratio: auto;            /* 高度由卡片固定高度决定，不再用比例撑 */
+}
+.model-card.vg-item .card-info {
+    flex: 0 0 124px;               /* = virtual-grid.js 的 INFO_H，二者必须一致 */
+    height: 124px;
+    overflow: hidden;
+}
+/* 悬停信息模式：info 已由 [data-card-info=hover] 设为浮层(absolute)，预览占满整卡 */
+#card-grid.vg-active[data-card-info="hover"] .model-card.vg-item .card-info {
+    flex: none;
+    height: auto;
+}
+
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    text-align: center;
+    padding: 100px var(--space-5);
+    color: var(--text-muted);
+    line-height: 1.6;
+}
+.empty-state-icon { color: var(--text-muted); opacity: 0.5; }
+.empty-state-title {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-semibold);
+    color: var(--text-secondary);
+}
+.empty-state-sub {
+    font-size: var(--text-base);
+    color: var(--text-muted);
+    max-width: 340px;
+}
+.empty-state .btn { margin-top: var(--space-1); }
+
+/* ========== 加载骨架 ========== */
+.skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-5);
+    max-width: 1800px;
+}
+.skeleton-grid[hidden] { display: none; }   /* 压过 .skeleton-grid 的 display:grid */
+.skeleton-card {
+    aspect-ratio: 240 / 390;
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+}
+.skeleton-shimmer {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(100deg, var(--bg-card) 28%, var(--bg-card-hover) 48%, var(--bg-card) 68%);
+    background-size: 220% 100%;
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-pulse {
+    0%   { background-position: 180% 0; }
+    100% { background-position: -180% 0; }
+}
+
+/* ========== Model Card ========== */
+.model-card {
+    background: var(--bg-card);
+    border: 1px solid transparent;
+    border-radius: var(--radius-card);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all var(--transition-slow);
+    position: relative;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.15);
+    /* 视口外卡片由浏览器原生跳过布局/绘制，替代了原先手写的 DOM 回收。
+       auto + 估高：首次渲染后浏览器会记住真实尺寸，估值仅用于尚未渲染过的卡片。 */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 390px;
+}
+
+.model-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(var(--accent-rgb), 0.3);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(var(--accent-rgb), 0.15);
+}
+
+.model-card.dragging {
+    opacity: 0.5;
+}
+
+.card-preview {
+    width: 100%;
+    aspect-ratio: var(--card-aspect, 3 / 4);
+    overflow: hidden;
+    background-color: var(--bg-primary);
+    background-image: url('/noctyra_static/images/placeholder-dark.svg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    position: relative;
+}
+
+[data-theme="light"] .card-preview {
+    background-image: url('/noctyra_static/images/placeholder-light.svg');
+}
+
+.card-preview img,
+.card-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* hover 时动态创建的视频，绝对覆盖在静态首帧 img 上播放 */
+.card-preview video.card-hover-video { position: absolute; inset: 0; }
+
+.model-card:hover .card-preview img,
+.model-card:hover .card-preview video {
+    transform: scale(1.04);
+}
+
+.card-video-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: var(--text-xl);
+    border-radius: 50%;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+.model-card:hover .card-video-icon {
+    opacity: 0;
+}
+
+.card-img-count {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(8px);
+    color: white;
+    font-size: var(--text-xs);
+    padding: 3px 8px;
+    border-radius: 10px;
+    pointer-events: none;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.card-img-count svg {
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+.card-count-sep {
+    width: 1px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.3);
+    margin: 0 2px;
+}
+
+.card-info {
+    padding: 10px 12px 12px;
+}
+
+.card-name {
+    font-size: var(--text-base);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    letter-spacing: -0.01em;
+}
+
+.card-type-label {
+    flex-shrink: 0;
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+}
+
+[data-theme="light"] .card-type-label {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.card-version {
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: 6px;
+}
+
+.card-badges {
+    display: flex;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+    margin-bottom: 5px;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: var(--text-2xs);
+    color: white;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.badge-size {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.badge-deleted {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    font-weight: 600;
+}
+
+/* 预览图缺失（本地缓存不全） */
+.badge-preview-missing {
+    background: rgba(245, 158, 11, 0.18);
+    color: #f59e0b;
+    font-weight: 600;
+}
+
+/* 预览死链(404/410，已下架)：红色，与琥珀"缺失"区分 */
+.badge-preview-failed {
+    background: rgba(244, 63, 94, 0.18);
+    color: #f87171;
+    font-weight: 600;
+}
+
+/* 文件损坏：醒目红底，扫描自动标记 */
+.badge-corrupt {
+    background: rgba(239, 68, 68, 0.9);
+    color: #fff;
+    font-weight: 700;
+}
+
+.card-redownload-btn {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(var(--accent-rgb), 0.9);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: var(--text-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 3;
+}
+
+.model-card:hover .card-redownload-btn {
+    opacity: 1;
+}
+
+.card-redownload-btn:hover {
+    background: var(--accent);
+    transform: scale(1.1);
+}
+
+.card-redownload-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    transform: none;
+}
+
+.modal-deleted-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    padding: 4px 10px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    color: #f87171;
+}
+
+.modal-deleted-banner svg {
+    flex-shrink: 0;
+}
+
+.modal-deleted-text {
+    color: #f87171;
+    font-weight: 600;
+    font-size: var(--text-sm);
+}
+
+.modal-redownload-btn {
+    color: var(--accent) !important;
+}
+
+.modal-redownload-btn:hover {
+    background: var(--accent) !important;
+    color: #fff !important;
+}
+
+.modal-redownload-btn.downloading {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.source-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+img.source-icon {
+    object-fit: contain;
+    background: transparent;
+    border-radius: 4px;
+}
+
+.source-unmatched {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="light"] .source-unmatched {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.12);
+}
+
+.source-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: white;
+    text-decoration: none;
+    transition: all var(--transition);
+    letter-spacing: 0.01em;
+}
+
+.source-link:hover {
+    opacity: 0.85;
+    color: white;
+    transform: translateY(-1px);
+}
+
+.source-link-icon {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.source-civitai {
+    background: #3b82f6;
+}
+
+.source-hf {
+    background: #f59e0b;
+}
+
+.card-stats {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.card-creator {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ========== Favorite Button on Card ========== */
+.card-fav-btn {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.75);
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s, color 0.2s, transform 0.15s;
+    z-index: 2;
+}
+
+.card-fav-btn svg {
+    display: block;
+}
+
+.model-card:hover .card-fav-btn,
+.card-fav-btn.active {
+    opacity: 1;
+}
+
+.card-fav-btn.active {
+    color: #fbbf24;
+    background: rgba(0, 0, 0, 0.65);
+    border-color: rgba(251, 191, 36, 0.35);
+}
+
+.card-fav-btn:hover {
+    background: rgba(0, 0, 0, 0.75);
+    color: #fbbf24;
+    transform: scale(1.08);
+}
+

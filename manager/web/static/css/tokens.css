@@ -1,0 +1,79 @@
+/* ========================================================================
+   Design Tokens — 全站设计变量的单一来源（对标 Lora-Manager 的 tokens 层）
+
+   目的：把"到处写死"的字号 / 间距 / 行高 / 层级抽成一套命名 scale，
+   全站引用同一批变量，保证节奏一致、易维护、好换肤。
+
+   原则：本文件的 token 值 = 现有代码里常用的像素值，便于 1:1 替换、零外观变化。
+   颜色 / --accent / --header-height 等仍在 style.css（颜色系统后续再合并到此）。
+   加载顺序：本文件在 style.css 之前引入。
+   ======================================================================== */
+
+:root {
+    /* ---- 间距 scale（含半档，覆盖现用的 6/10/14px 奇数值，方便 1:1 迁移） ---- */
+    --space-0-5: 2px;
+    --space-1:   4px;
+    --space-1-5: 6px;
+    --space-2:   8px;
+    --space-2-5: 10px;
+    --space-3:   12px;
+    --space-3-5: 14px;
+    --space-4:   16px;
+    --space-5:   20px;
+    --space-6:   24px;
+    --space-7:   28px;
+    --space-8:   32px;
+    --space-10:  40px;
+    --space-12:  48px;
+    --space-16:  64px;
+
+    /* ---- 字号 scale（对齐现用 9~22px） ---- */
+    --text-3xs:  9px;
+    --text-2xs:  10px;
+    --text-xs:   11px;
+    --text-sm:   12px;
+    --text-base: 13px;   /* 应用正文常用值 */
+    --text-md:   14px;
+    --text-lg:   15px;
+    --text-xl:   18px;
+    --text-2xl:  22px;
+    --text-3xl:  26px;   /* 统计页大数字等展示用 */
+
+    /* ---- 字重 ---- */
+    --weight-normal:   400;
+    --weight-medium:   500;
+    --weight-semibold: 600;
+    --weight-bold:     700;
+
+    /* ---- 行高 ---- */
+    --leading-tight:   1.2;
+    --leading-snug:    1.35;
+    --leading-normal:  1.5;
+    --leading-relaxed: 1.65;
+
+    /* ---- 圆角补档（base 名 --radius/--radius-sm/--radius-xs/--radius-card 仍在 style.css） ---- */
+    --radius-md:   8px;
+    --radius-lg:   14px;
+    --radius-full: 9999px;
+
+    /* ---- 过渡补档（--transition/--transition-slow 仍在 style.css） ---- */
+    --transition-fast:   0.12s ease;
+    --transition-bounce: 0.22s cubic-bezier(0.34, 1.2, 0.64, 1);
+
+    /* ---- 层级 scale（替代散落的 z-index 魔法数字） ---- */
+    --z-base:     1;
+    --z-dropdown: 50;
+    --z-sidebar:  90;
+    --z-header:   100;
+    --z-overlay:  1000;
+    --z-modal:    5000;
+    --z-toast:    10000;
+
+    /* ---- 兼容别名：部分 CSS 历史上引用了这些没定义的变量名（会渲染成无效值）。
+            指向真实 token，避免边框/背景"不显示"。新代码请用右侧真名。 ---- */
+    --border-color: var(--border);
+    --danger:       var(--error);
+    --card-bg:      var(--bg-card);
+    --surface-2:    var(--bg-surface);
+    --bg-hover:     var(--bg-card-hover);
+}

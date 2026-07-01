@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noctyra Workflow Manager</title>
+    <link rel="icon" type="image/svg+xml" href="/noctyra_static/images/noctyra-logo.svg?v=13.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="/noctyra_static/images/favicon-32.png?v=13.0">
+    <link rel="apple-touch-icon" href="/noctyra_static/images/apple-touch-icon.png?v=13.0">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('noctyra_theme');
+                if (t === 'light') {
+                    document.documentElement.dataset.theme = 'light';
+                } else if (t === 'auto') {
+                    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                        document.documentElement.dataset.theme = 'light';
+                    }
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="/noctyra_static/css/tokens.css?v=1.2">
+    <link rel="stylesheet" href="/noctyra_static/css/style.css?v=14.3">
+    <link rel="stylesheet" href="/noctyra_static/css/modal.css?v=13.1">
+    <link rel="stylesheet" href="/noctyra_static/css/settings.css?v=13.2">
+    <link rel="stylesheet" href="/noctyra_static/css/dialogs.css?v=13.0">
+    <link rel="stylesheet" href="/noctyra_static/css/misc.css?v=12.8">
+    <link rel="stylesheet" href="/noctyra_static/css/workflows.css?v=5.3">
+</head>
+<body>
+    <div class="wf-layout">
+        <header class="wf-header">
+            <div class="wf-header-left">
+                <div class="app-logo">
+                    <img class="app-logo-mark" src="/noctyra_static/images/noctyra-logo.svg?v=13.0" alt="">
+                    <span class="app-logo-text">Noctyra</span>
+                </div>
+                <nav class="page-switcher" role="tablist" aria-label="页面">
+                    <a href="/noctyra-manager" class="page-switcher-tab">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                            <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                        <span>模型</span>
+                    </a>
+                    <a href="/noctyra-workflows" class="page-switcher-tab active" aria-current="page">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <path d="m21 15-5-5L5 21"/>
+                        </svg>
+                        <span>工作流</span>
+                    </a>
+                    <a href="/noctyra-statistics" class="page-switcher-tab">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                        <span>统计</span>
+                    </a>
+                </nav>
+            </div>
+            <div class="wf-header-center">
+                <input type="text" id="gallery-search" class="wf-input wf-search-input" placeholder="搜索图库...">
+            </div>
+            <div class="wf-header-right">
+                <button class="btn btn-sfw" id="wf-sfw-toggle" title="点击切换是否显示 NSFW（红色=已隐藏）" aria-label="切换 NSFW 显示" aria-pressed="false">NSFW</button>
+                <button class="btn btn-icon" id="wf-theme-toggle" title="切换主题" aria-label="切换主题"></button>
+                <button class="btn btn-icon" id="btn-settings" data-section="gallery" title="设置" aria-label="设置">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="wf-main">
+            <!-- 获取区（一步式：URL 或拖拽文件都直接入库） -->
+            <section class="wf-import-bar">
+                <div class="wf-fetch-bar">
+                    <input type="text" id="civitai-url-input" class="wf-input"
+                           placeholder="粘贴 CivitAI 图片/视频链接（civitai.com / civitai.red 都支持），回车提交">
+                    <button id="fetch-btn" class="wf-btn wf-btn-primary">获取并保存</button>
+                    <button id="import-drop-zone" class="wf-btn wf-btn-secondary" title="选择本地图片文件导入">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        本地导入
+                    </button>
+                    <input type="file" id="import-file-input" accept="image/*,video/*" style="display:none">
+                </div>
+                <div id="fetch-status" class="wf-fetch-status"></div>
+            </section>
+
+            <!-- 图库主体：左文件夹树 + 右瀑布流 -->
+            <div class="wf-gallery-body">
+            <aside class="wf-folder-sidebar" id="wf-folder-sidebar">
+                <div class="wf-folder-head">
+                    <span class="wf-folder-title">文件夹</span>
+                    <div class="wf-folder-head-actions">
+                        <button id="wf-scan-btn" class="wf-btn wf-btn-sm" title="扫描注册文件夹，索引新增的图片/视频（原地，不拷贝）">扫描</button>
+                        <button id="wf-folder-add-btn" class="wf-btn wf-btn-sm" title="注册一个真实文件夹">+ 文件夹</button>
+                    </div>
+                </div>
+                <div class="wf-folder-tree" id="wf-folder-tree"></div>
+            </aside>
+
+            <!-- 图库 -->
+            <section class="wf-gallery-section">
+                <div class="wf-gallery-header">
+                    <h2 class="wf-section-title">图库 <span id="gallery-count" class="wf-count"></span></h2>
+                    <div class="wf-gallery-filters">
+                        <div class="filter-pop" id="wf-filter-pop">
+                            <button class="wf-btn wf-btn-sm filter-toggle-btn" id="wf-filter-toggle" aria-haspopup="true" aria-expanded="false">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                                <span>筛选</span>
+                                <span class="filter-count" id="wf-filter-count" hidden>0</span>
+                            </button>
+                            <div class="filter-panel" id="wf-filter-panel" hidden>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">标签</div>
+                                    <div class="filter-chips" id="wf-chips-tag"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">格式</div>
+                                    <div class="filter-chips" id="wf-chips-format"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">资源完整度</div>
+                                    <div class="filter-chips" id="wf-chips-resources"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">收藏</div>
+                                    <div class="filter-chips" id="wf-chips-fav"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">工作流</div>
+                                    <div class="filter-chips" id="wf-chips-workflow"></div>
+                                </div>
+                                <div class="filter-panel-footer">
+                                    <button class="wf-btn wf-btn-sm" id="wf-clear-filters" style="margin-left:auto">清空</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="active-filters" id="wf-active-filters"></div>
+                    </div>
+                    <div class="wf-gallery-actions">
+                        <button id="batch-import-btn" class="wf-btn wf-btn-sm" title="一次粘贴多个 CivitAI 图片 URL 批量导入到图库">批量导入</button>
+                    </div>
+                </div>
+                <div class="wf-gallery-grid" id="gallery-grid"></div>
+                <div class="wf-gallery-empty" id="gallery-empty" style="display:none;">
+                    <p>图库为空，粘贴 CivitAI 图片链接并保存</p>
+                </div>
+                <div class="wf-gallery-pagination" id="gallery-pagination"></div>
+                <div id="wf-scroll-sentinel" aria-hidden="true"></div>
+            </section>
+            </div>
+        </main>
+
+        <!-- 详情弹窗 -->
+        <div class="wf-detail-overlay" id="detail-overlay" role="dialog" aria-modal="true" aria-label="图片详情">
+            <div class="wf-detail-modal">
+                <button class="wf-detail-close" id="detail-close">&times;</button>
+                <div class="wf-detail-body" id="detail-body"></div>
+            </div>
+        </div>
+
+        <!-- 设置弹窗（与模型管理器共用） -->
+        <div class="settings-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-label="设置">
+            <div class="settings-content"></div>
+        </div>
+
+        <!-- 批量导入弹窗 -->
+        <div class="wf-detail-overlay" id="batch-import-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="批量导入">
+            <div class="wf-detail-modal wf-batch-modal">
+                <button class="wf-detail-close" id="batch-import-close">&times;</button>
+                <div class="wf-batch-body">
+                    <h3 style="margin:0 0 8px 0;">批量导入 CivitAI 图片</h3>
+                    <p style="color:var(--text-muted);margin:0 0 12px 0;font-size:13px;">
+                        一行一个 URL（civitai.com / civitai.red 都支持）。后端按顺序并发拉取（最多 3 路）并入图库，重复的会跳过。
+                    </p>
+                    <textarea id="batch-import-textarea" class="wf-input"
+                              rows="10"
+                              style="width:100%;font-family:monospace;font-size:13px;"
+                              placeholder="https://civitai.com/images/123456&#10;https://civitai.com/images/789012&#10;..."></textarea>
+                    <div id="batch-import-progress" class="wf-batch-progress" style="display:none;">
+                        <div class="wf-batch-progress-bar"><div class="wf-batch-progress-fill" id="batch-import-fill"></div></div>
+                        <div class="wf-batch-progress-text" id="batch-import-text"></div>
+                    </div>
+                    <div class="wf-batch-actions">
+                        <button id="batch-import-cancel" class="wf-btn wf-btn-sm">取消</button>
+                        <button id="batch-import-submit" class="wf-btn wf-btn-primary">开始导入</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+    <script type="module" src="/noctyra_static/js/workflows/app.js?v=4.26"></script>
+</body>
+</html>

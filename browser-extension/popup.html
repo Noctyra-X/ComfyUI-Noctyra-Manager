@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <header>
+        <div class="logo-badge">
+            <img class="logo-img" src="icons/icon-128.png" alt="Noctyra">
+        </div>
+        <div>
+            <h1>Noctyra Companion</h1>
+            <div class="status" id="status">检查连接...</div>
+        </div>
+    </header>
+
+    <section class="tabs">
+        <button class="tab active" data-tab="downloads">下载</button>
+        <button class="tab" data-tab="settings">设置</button>
+    </section>
+
+    <section id="panel-downloads" class="panel active">
+        <div class="tab-bar">
+            <button class="sub-tab active" data-filter="active">进行中 <span class="count" id="count-active">0</span></button>
+            <button class="sub-tab" data-filter="failed">失败 <span class="count" id="count-failed">0</span></button>
+            <button class="sub-tab" data-filter="complete">完成 <span class="count" id="count-complete">0</span></button>
+            <button class="clear-btn" id="btn-clear" title="清空所有终态记录">清空</button>
+        </div>
+        <div class="download-list" id="download-list">
+            <div class="empty">无任务</div>
+        </div>
+    </section>
+
+    <section id="panel-settings" class="panel">
+        <div class="settings">
+            <label><span>地址</span><input type="text" id="host" placeholder="127.0.0.1"></label>
+            <label><span>端口</span><input type="number" id="port" placeholder="8188" min="1" max="65535"></label>
+            <button id="save-btn">保存并测试</button>
+        </div>
+        <div class="info" id="info"></div>
+        <footer>
+            <button class="link-btn" id="open-manager">打开 Noctyra 管理器</button>
+        </footer>
+    </section>
+
+    <script src="noctyra-send.js"></script>
+    <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noctyra 统计</title>
+    <link rel="icon" type="image/svg+xml" href="/noctyra_static/images/noctyra-logo.svg?v=13.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="/noctyra_static/images/favicon-32.png?v=13.0">
+    <link rel="apple-touch-icon" href="/noctyra_static/images/apple-touch-icon.png?v=13.0">
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('noctyra_theme');
+                if (t === 'light') {
+                    document.documentElement.dataset.theme = 'light';
+                } else if (t === 'auto') {
+                    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                        document.documentElement.dataset.theme = 'light';
+                    }
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="/noctyra_static/css/tokens.css?v=1.2">
+    <link rel="stylesheet" href="/noctyra_static/css/style.css?v=14.3">
+    <link rel="stylesheet" href="/noctyra_static/css/misc.css?v=12.8">
+    <link rel="stylesheet" href="/noctyra_static/css/workflows.css?v=3.8">
+    <link rel="stylesheet" href="/noctyra_static/css/statistics.css?v=1.3">
+    <script src="/noctyra_static/vendor/chart.js/chart.umd.js"></script>
+</head>
+<body>
+    <div class="wf-layout">
+        <header class="wf-header">
+            <div class="wf-header-left">
+                <div class="app-logo">
+                    <img class="app-logo-mark" src="/noctyra_static/images/noctyra-logo.svg?v=13.0" alt="">
+                    <span class="app-logo-text">Noctyra</span>
+                </div>
+                <nav class="page-switcher" role="tablist" aria-label="页面">
+                    <a href="/noctyra-manager" class="page-switcher-tab">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                            <line x1="12" y1="22.08" x2="12" y2="12"/>
+                        </svg>
+                        <span>模型</span>
+                    </a>
+                    <a href="/noctyra-workflows" class="page-switcher-tab">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5"/>
+                            <path d="m21 15-5-5L5 21"/>
+                        </svg>
+                        <span>工作流</span>
+                    </a>
+                    <a href="/noctyra-statistics" class="page-switcher-tab active" aria-current="page">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <line x1="18" y1="20" x2="18" y2="10"/>
+                            <line x1="12" y1="20" x2="12" y2="4"/>
+                            <line x1="6" y1="20" x2="6" y2="14"/>
+                        </svg>
+                        <span>统计</span>
+                    </a>
+                </nav>
+            </div>
+            <div class="wf-header-right">
+                <button class="btn btn-icon" id="stat-theme-toggle" title="切换主题" aria-label="切换主题"></button>
+                <button class="btn btn-icon" id="stat-refresh" title="刷新统计" aria-label="刷新">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="stat-main" id="stat-main">
+            <div class="stat-loading" id="stat-loading">加载统计中…</div>
+            <div id="stat-content" style="display:none;">
+                <!-- 概览数字卡 -->
+                <section class="stat-cards" id="stat-cards"></section>
+
+                <!-- 图表网格 -->
+                <section class="stat-grid">
+                    <div class="stat-chart-card">
+                        <h3>匹配情况</h3>
+                        <div class="stat-canvas-wrap stat-canvas-sm"><canvas id="chart-matched"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card">
+                        <h3>来源分布</h3>
+                        <div class="stat-canvas-wrap stat-canvas-sm"><canvas id="chart-source"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card">
+                        <h3>内容分级</h3>
+                        <div class="stat-canvas-wrap stat-canvas-sm"><canvas id="chart-nsfw"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card">
+                        <h3>使用情况</h3>
+                        <div class="stat-canvas-wrap stat-canvas-sm"><canvas id="chart-usage"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card stat-span-2">
+                        <h3>按类型分布</h3>
+                        <div class="stat-canvas-wrap"><canvas id="chart-type"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card stat-span-2">
+                        <h3>按基础模型分布（Top 15）</h3>
+                        <div class="stat-canvas-wrap"><canvas id="chart-base"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card stat-span-2">
+                        <h3>存储占用（按类型）</h3>
+                        <div class="stat-canvas-wrap"><canvas id="chart-storage"></canvas></div>
+                    </div>
+                    <div class="stat-chart-card stat-span-2">
+                        <h3>最常用模型（Top 12）</h3>
+                        <div class="stat-model-list" id="stat-top-used"></div>
+                    </div>
+                    <div class="stat-chart-card stat-span-4">
+                        <h3>热门标签</h3>
+                        <div class="stat-tags" id="stat-tags"></div>
+                    </div>
+                </section>
+            </div>
+            <div class="stat-error" id="stat-error" style="display:none;"></div>
+        </main>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+    <script type="module" src="/noctyra_static/js/statistics.js?v=1.7"></script>
+</body>
+</html>

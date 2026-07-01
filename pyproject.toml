@@ -1,0 +1,30 @@
+[project]
+name = "ComfyUI-Noctyra-Manager"
+description = "Standalone model manager + workflow gallery with CivitAI & HuggingFace matching, plus Chrome extension"
+version = "1.0.0"
+license = "GPL-3.0-or-later"
+dependencies = ["Pillow", "numpy", "requests", "aiohttp", "safetensors"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-asyncio>=0.21"]
+
+[project.urls]
+Repository = "https://github.com/Noctyra-X/ComfyUI-Noctyra-Manager"
+
+[tool.comfy]
+PublisherId = "qiuuc"
+DisplayName = "ComfyUI-Noctyra-Manager"
+Icon = "✨"
+
+[tool.pytest.ini_options]
+# 测试根目录；conftest.py 放在这里即可被所有测试发现
+testpaths = ["tests"]
+# 允许 async def 测试；pytest-asyncio 不强制使用装饰器
+asyncio_mode = "auto"
+# --import-mode=importlib：避免 pytest 把插件目录当成包（__init__.py 会尝试
+# `from .manager import ...` 相对导入，脱离 ComfyUI 环境会失败）
+addopts = "-ra --strict-markers --import-mode=importlib"
+# 抑制 ComfyUI 集成测试会用到的 PromptServer 相关 warning
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

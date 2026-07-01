@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ComfyUI
+*.log
+
+# Claude Code
+.claude/
+
+# Noctyra — 用户本地数据 / 凭据 / 内部文档，不上传
+DEVELOPMENT.md
+HANDOFF.md
+manager_config.json
+.cache/
+gallery/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.bak
+*.json.bak
+
+# Chrome 加载未打包扩展时生成的状态目录
+browser-extension/_metadata/

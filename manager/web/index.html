@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noctyra Model Manager</title>
+    <link rel="icon" type="image/svg+xml" href="/noctyra_static/images/noctyra-logo.svg?v=13.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="/noctyra_static/images/favicon-32.png?v=13.0">
+    <link rel="apple-touch-icon" href="/noctyra_static/images/apple-touch-icon.png?v=13.0">
+    <script>
+        // 在首屏前同步设置主题，避免 light 模式刷新闪黑
+        // 支持 dark / light / auto（auto = 跟随系统 prefers-color-scheme）
+        (function () {
+            try {
+                var t = localStorage.getItem('noctyra_theme');
+                if (t === 'light') {
+                    document.documentElement.dataset.theme = 'light';
+                } else if (t === 'auto') {
+                    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                        document.documentElement.dataset.theme = 'light';
+                    }
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="/noctyra_static/css/tokens.css?v=1.2">
+    <link rel="stylesheet" href="/noctyra_static/css/style.css?v=14.3">
+    <link rel="stylesheet" href="/noctyra_static/css/cards.css?v=14.6">
+    <link rel="stylesheet" href="/noctyra_static/css/modal.css?v=14.1">
+    <link rel="stylesheet" href="/noctyra_static/css/settings.css?v=13.3">
+    <link rel="stylesheet" href="/noctyra_static/css/download.css?v=13.0">
+    <link rel="stylesheet" href="/noctyra_static/css/dialogs.css?v=13.3">
+    <link rel="stylesheet" href="/noctyra_static/css/misc.css?v=13.5">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="app-logo">
+                <img class="app-logo-mark" src="/noctyra_static/images/noctyra-logo.svg?v=13.0" alt="">
+                <span class="app-logo-text">Noctyra</span>
+            </div>
+            <nav class="page-switcher" role="tablist" aria-label="页面">
+                <a href="/noctyra-manager" class="page-switcher-tab active" aria-current="page">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                        <line x1="12" y1="22.08" x2="12" y2="12"/>
+                    </svg>
+                    <span>模型</span>
+                </a>
+                <a href="/noctyra-workflows" class="page-switcher-tab">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="m21 15-5-5L5 21"/>
+                    </svg>
+                    <span>工作流</span>
+                </a>
+                <a href="/noctyra-statistics" class="page-switcher-tab">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    <span>统计</span>
+                </a>
+            </nav>
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="搜索模型 (Ctrl+F)">
+            </div>
+            <div class="header-actions">
+                <button class="btn" id="btn-scan">扫描</button>
+                <button class="btn" id="btn-match" title="匹配未匹配的模型，Shift+点击=全部重匹配">匹配</button>
+                <button class="btn" id="btn-download" title="从 CivitAI 下载模型">下载</button>
+                <span class="header-divider"></span>
+                <button class="btn btn-icon" id="btn-import" title="导入本地模型文件到Unknown" aria-label="导入本地模型">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                </button>
+                <button class="btn btn-icon btn-update-check" id="btn-check-updates" title="检查本地模型是否有新版本" aria-label="检查模型更新">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="btn btn-icon" id="btn-duplicates" title="查找重复模型" aria-label="重复项">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                </button>
+                <button class="btn btn-icon" id="btn-trigger-words" title="汇总全库 trigger words（触发词）" aria-label="触发词">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
+                </button>
+                <button class="btn btn-icon" id="btn-organize" title="按 Base Model 自动整理到子文件夹" aria-label="整理">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+                </button>
+                <span class="header-divider"></span>
+                <button class="btn btn-sfw" id="btn-sfw-toggle" title="点击切换是否显示 NSFW（红色=已隐藏）" aria-label="切换 NSFW 显示" aria-pressed="false">NSFW</button>
+                <button class="btn btn-icon" id="btn-select-mode" title="批量选择模式" aria-label="批量选择">☑</button>
+                <button class="btn btn-icon" id="btn-theme-toggle" title="切换主题" aria-label="切换主题"></button>
+                <button class="btn btn-icon" id="btn-settings" title="设置" aria-label="设置">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Body -->
+        <div class="app-body">
+            <!-- Sidebar -->
+            <aside class="sidebar" id="sidebar">
+                <div class="sidebar-title">
+                    <span>文件夹</span>
+                    <button class="sidebar-pin-btn" id="btn-pin-sidebar" title="固定侧栏">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+                    </button>
+                </div>
+                <div id="sidebar-folders"></div>
+                <div class="sidebar-resize-handle" id="sidebar-resize-handle" title="拖动调整宽度"></div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Model Type Tabs (动态生成) -->
+                <div class="type-tabs" id="type-tabs">
+                    <button class="type-tab active" data-type="">全部</button>
+                </div>
+                <!-- Toolbar -->
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <select class="filter-select" id="sort-select">
+                            <option value="file_name">按名称</option>
+                            <option value="model_name">按模型名</option>
+                            <option value="file_size">按大小</option>
+                            <option value="modified">按修改时间</option>
+                            <option value="published_at">按发布时间</option>
+                            <option value="base_model">按基础模型</option>
+                            <option value="usage_count">按使用次数</option>
+                        </select>
+                        <button class="btn btn-icon btn-sort-dir" id="btn-sort-dir" title="切换排序方向">↓</button>
+                        <!-- 筛选弹层：基础模型 / 标签 / 来源 / 许可 / 预览图 -->
+                        <div class="filter-pop" id="filter-pop">
+                            <button class="btn filter-toggle-btn" id="btn-filter-toggle" aria-haspopup="true" aria-expanded="false">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                                <span>筛选</span>
+                                <span class="filter-count" id="filter-count" hidden>0</span>
+                            </button>
+                            <div class="filter-panel" id="filter-panel" hidden>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">基础模型</div>
+                                    <div class="filter-chips" id="chips-base_model"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">LoRA 细分（LoCon = LyCORIS）</div>
+                                    <div class="filter-chips" id="chips-lora_subtype"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">标签</div>
+                                    <div class="filter-chips" id="chips-tag"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">来源</div>
+                                    <div class="filter-chips" id="chips-source"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">许可（需已匹配）</div>
+                                    <div class="filter-chips" id="chips-license"></div>
+                                </div>
+                                <div class="filter-group">
+                                    <div class="filter-group-title">预览图（需已匹配）</div>
+                                    <div class="filter-chips" id="chips-preview_status"></div>
+                                </div>
+                                <div class="filter-panel-footer">
+                                    <select class="filter-select" id="filter-preset-select" title="加载筛选预设">
+                                        <option value="">筛选预设…</option>
+                                    </select>
+                                    <button class="btn btn-icon" id="btn-save-preset" title="保存当前筛选为预设" aria-label="保存预设">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                                    </button>
+                                    <button class="btn btn-icon" id="btn-delete-preset" title="删除选中的预设" aria-label="删除预设" disabled>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                                    </button>
+                                    <button class="btn btn-sm" id="btn-clear-filters" title="清空全部筛选">清空</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 已选筛选条 -->
+                        <div class="active-filters" id="active-filters"></div>
+                    </div>
+                    <div class="toolbar-right">
+                        <span id="result-count">0 个模型</span>
+                    </div>
+                </div>
+
+                <!-- Card Grid -->
+                <div class="content-area">
+                    <div id="card-grid"></div>
+                    <div id="scroll-sentinel"></div>
+                </div>
+                <!-- A-Z 字母条：按名排序时显示，点击跳到该首字母的第一个模型 -->
+                <div id="alpha-bar" class="alpha-bar" aria-label="字母跳转" hidden></div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Model Detail Modal -->
+    <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-label="模型详情">
+        <div class="modal-content"></div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="settings-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-label="设置">
+        <div class="settings-content"></div>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="context-menu"></div>
+
+    <script type="module" src="/noctyra_static/js/app.js?v=15.59"></script>
+</body>
+</html>

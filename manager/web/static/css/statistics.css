@@ -1,0 +1,213 @@
+/* ========== 统计页 ========== */
+.stat-main {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-5) var(--space-6) var(--space-10);
+    max-width: 1500px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.stat-loading,
+.stat-error {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 80px var(--space-5);
+    font-size: var(--text-lg);
+}
+.stat-error { color: var(--error); }
+.stat-empty {
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    text-align: center;
+    padding: var(--space-8) var(--space-4);
+}
+
+/* 概览数字卡 */
+.stat-cards {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: var(--space-3-5);
+    margin-bottom: var(--space-6);
+}
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: var(--space-4) var(--space-4) var(--space-3-5);
+    box-shadow: var(--shadow-sm);
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.stat-card:hover {
+    border-color: var(--border-strong, var(--text-muted));
+    box-shadow: var(--shadow);
+}
+.stat-card-accent {
+    border-color: rgba(var(--accent-rgb), 0.4);
+    background: linear-gradient(160deg, rgba(var(--accent-rgb), 0.12), transparent 70%), var(--bg-card);
+}
+.stat-card-value {
+    font-size: var(--text-3xl);
+    font-weight: var(--weight-bold);
+    letter-spacing: -0.02em;
+    color: var(--text);
+    line-height: 1.1;
+}
+.stat-card-label {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    color: var(--text-muted);
+    margin-top: var(--space-1-5);
+}
+.stat-card-hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    opacity: 0.75;
+    margin-top: 3px;
+}
+
+/* 图表网格 */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-4);
+}
+.stat-chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: var(--space-3-5) var(--space-4) var(--space-4);
+    box-shadow: var(--shadow-sm);
+    min-width: 0;
+}
+.stat-chart-card h3 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-base);
+    font-weight: var(--weight-semibold);
+    color: var(--text);
+}
+.stat-span-2 { grid-column: span 2; }
+.stat-span-4 { grid-column: span 4; }
+
+.stat-canvas-wrap {
+    position: relative;
+    height: 280px;
+}
+.stat-canvas-wrap.stat-canvas-sm { height: 220px; }
+
+/* 图表/列表空数据态(JS 在无数据时渲染 .stat-empty 替代 canvas) */
+.stat-canvas-wrap .stat-empty,
+.stat-model-list:empty::after,
+.stat-tags:empty::after {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    min-height: 60px;
+}
+.stat-model-list:empty::after,
+.stat-tags:empty::after {
+    content: '暂无数据';
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+/* 最常用模型列表（带缩略图） */
+.stat-model-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1-5);
+    max-height: 300px;
+    overflow-y: auto;
+}
+.stat-model-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2-5);
+    padding: var(--space-1) var(--space-1-5);
+    border-radius: var(--radius-md);
+    transition: background 0.12s;
+}
+.stat-model-item:hover { background: rgba(var(--accent-rgb), 0.08); }
+.stat-model-rank {
+    width: 18px;
+    flex-shrink: 0;
+    text-align: center;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-bold);
+    color: var(--text-muted);
+}
+.stat-model-thumb {
+    width: 36px;
+    height: 48px;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    background: var(--bg-input, rgba(127, 127, 127, 0.12));
+    border: 1px solid var(--border);
+}
+.stat-model-info { flex: 1; min-width: 0; }
+.stat-model-name {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-bottom: var(--space-1);
+}
+.stat-model-bar {
+    height: 5px;
+    border-radius: 3px;
+    background: var(--bg-input, rgba(127, 127, 127, 0.14));
+    overflow: hidden;
+}
+.stat-model-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #a855f7, #6ba8fd);
+}
+.stat-model-count {
+    flex-shrink: 0;
+    min-width: 34px;
+    text-align: right;
+    font-size: var(--text-base);
+    font-weight: var(--weight-bold);
+    color: var(--accent);
+}
+
+/* 标签云 */
+.stat-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: baseline;
+}
+.stat-tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2-5);
+    border-radius: var(--radius-lg);
+    background: rgba(var(--accent-rgb), 0.12);
+    color: var(--text);
+    border: 1px solid rgba(var(--accent-rgb), 0.18);
+    line-height: 1.2;
+}
+.stat-tag b {
+    font-size: 0.78em;
+    font-weight: var(--weight-bold);
+    color: var(--accent);
+}
+
+/* 响应式收窄 */
+@media (max-width: 1100px) {
+    .stat-cards { grid-template-columns: repeat(3, 1fr); }
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .stat-span-2, .stat-span-4 { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+    .stat-cards { grid-template-columns: repeat(2, 1fr); }
+    .stat-grid { grid-template-columns: 1fr; }
+    .stat-span-2, .stat-span-4 { grid-column: span 1; }
+}

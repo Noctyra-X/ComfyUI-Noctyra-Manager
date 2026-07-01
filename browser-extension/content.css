@@ -1,0 +1,372 @@
+/* ---- Card badges on list pages ----
+   左上角固定角标。位置全靠 CSS 常量（top/left），JS 不做任何坐标计算，
+   故不抖、不错位、不卡；放左上角避开 CivitAI 自己的右上三点菜单。
+   去掉 backdrop-filter：列表页一屏几十张卡，每张一层 blur 会吃满 GPU 造成卡顿。 */
+.noctyra-card-badge {
+    position: absolute;
+    /* 下移避开 CivitAI 新版卡片左上角的"模型类型"徽章(LORA/Checkpoint)，原来 top:8px 会重合 */
+    top: 38px;
+    left: 8px;
+    z-index: 10;
+    height: 22px;
+    min-width: 22px;
+    padding: 0 7px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: rgba(16, 24, 20, 0.82);
+    color: #4ade80;
+    font-family: 'HarmonyOS Sans SC', 'HarmonyOS Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid rgba(74, 222, 128, 0.45);
+    border-radius: 11px;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    /* 一次性淡入：元素位置稳定，过渡只跑一次 → 不会"动画卡住" */
+    animation: noctyra-badge-in 0.16s ease-out;
+}
+@keyframes noctyra-badge-in {
+    from { opacity: 0; transform: translateY(-2px) scale(0.85); }
+    to   { opacity: 1; transform: none; }
+}
+.noctyra-card-badge-icon {
+    display: block;
+    flex-shrink: 0;
+}
+.noctyra-card-badge-num {
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* ---- 整卡高亮：已在库的卡片加淡绿内描边，比角标更一眼 ----
+   用 inset box-shadow（不占布局、跟随卡片自身圆角），不改 border 避免撑大/错位。 */
+.noctyra-has-badge {
+    box-shadow: inset 0 0 0 2px rgba(74, 222, 128, 0.5);
+    transition: box-shadow 0.18s ease;
+}
+@media (prefers-color-scheme: light) {
+    .noctyra-has-badge {
+        box-shadow: inset 0 0 0 2px rgba(34, 197, 94, 0.6);
+    }
+}
+
+/* ---- 版本按钮：已下载→绿色描边（仅作用于详情页版本选择按钮） ---- */
+button.noctyra-version-downloaded {
+    outline: 2px solid #4ade80 !important;
+    outline-offset: -2px;
+    box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.3), 0 0 8px rgba(74, 222, 128, 0.25) !important;
+    border-radius: inherit;
+}
+/* ---- Inline action button（模型详情页 CivitAI 按钮行） ---- */
+.noctyra-inline-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    /* 固定高度 + align-self: center：防止父 flex (align-items: stretch) 把按钮拉成长条；
+       flex-shrink: 0：fallback 锚点的紧凑容器下不被压扁；
+       min/max-width：极窄/极宽容器下保持稳定尺寸 */
+    height: 32px;
+    padding: 0 12px;
+    min-width: 96px;
+    max-width: 160px;
+    flex-shrink: 0;
+    align-self: center;
+    background: linear-gradient(135deg, #2d7ff9 0%, #4d95fb 100%);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    vertical-align: middle;
+    white-space: nowrap;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.15) inset, 0 1px 3px rgba(45, 127, 249,0.35);
+    transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.12s ease;
+}
+.noctyra-inline-btn:hover:not(:disabled) {
+    background: #4d95fb;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.15) inset, 0 2px 6px rgba(45, 127, 249,0.45);
+}
+.noctyra-inline-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+.noctyra-inline-btn:disabled {
+    opacity: 0.65;
+    cursor: default;
+}
+.noctyra-inline-btn svg {
+    opacity: 0.95;
+    flex-shrink: 0;
+}
+.noctyra-inline-btn.downloaded {
+    background: rgba(74, 222, 128, 0.12);
+    color: #4ade80;
+    box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.5);
+    cursor: default;
+}
+/* 已有记录（文件已删）：琥珀色，仍可点击重新下载 */
+.noctyra-inline-btn.record-only {
+    background: rgba(251, 191, 36, 0.14);
+    color: #fbbf24;
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.5);
+}
+.noctyra-inline-btn.record-only:hover:not(:disabled) {
+    background: rgba(251, 191, 36, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.7);
+}
+.noctyra-inline-btn.submitted {
+    background: rgba(255,255,255,0.08);
+    color: #d4d4d8;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+
+/* ---- Floating draggable variant (used on model detail pages) ----
+   不再依赖 CivitAI 的 action bar DOM 结构。position: fixed + chrome.storage 持久化
+   用户拖拽位置；边缘吸附确保不挡正文。 */
+.noctyra-inline-btn.noctyra-float {
+    position: fixed;
+    z-index: 2147483646;
+    /* 重置 anchor 模式下的所有尺寸约束 */
+    height: auto;
+    min-width: auto;
+    max-width: none;
+    flex-shrink: 1;
+    align-self: auto;
+    margin: 0;
+    /* 浮动胶囊形 */
+    padding: 10px 16px;
+    border-radius: 999px;
+    gap: 7px;
+    box-shadow: 0 4px 14px rgba(45, 127, 249, 0.45), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background 0.15s, box-shadow 0.15s,
+                left 0.25s ease, right 0.25s ease, top 0.25s ease, transform 0.1s ease;
+}
+.noctyra-inline-btn.noctyra-float:hover:not(:disabled):not(.dragging) {
+    background: #4d95fb;
+    box-shadow: 0 6px 20px rgba(45, 127, 249, 0.55), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-inline-btn.noctyra-float.dragging {
+    cursor: grabbing;
+    transition: none;        /* 拖拽期间禁用过渡，避免抖动 */
+    transform: scale(1.04);
+}
+.noctyra-inline-btn.noctyra-float:disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+/* 浮按钮各状态用各自的颜色（不再都是下载蓝）：已在本地=绿，已有记录=琥珀 */
+.noctyra-inline-btn.noctyra-float.downloaded {
+    background: rgba(34, 197, 94, 0.95);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(34, 197, 94, 0.5), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+    cursor: grab;            /* 已下载仍允许拖动到顺眼位置 */
+}
+.noctyra-inline-btn.noctyra-float.downloaded:hover:not(.dragging) {
+    background: rgba(34, 197, 94, 1);
+    box-shadow: 0 6px 20px rgba(34, 197, 94, 0.6), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-inline-btn.noctyra-float.record-only {
+    background: rgba(217, 119, 6, 0.95);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.5), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-inline-btn.noctyra-float.record-only:hover:not(.dragging) {
+    background: rgba(217, 119, 6, 1);
+    box-shadow: 0 6px 20px rgba(245, 158, 11, 0.6), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-inline-btn.noctyra-float.no-version {
+    opacity: 0.72;           /* 未选版本：淡一点提示不可下载，但仍可拖动 */
+}
+/* 已加入下载（已提交到队列）：青绿色，区别于下载蓝/本地绿/记录琥珀。
+   3 个类的选择器优先级高于 .noctyra-float 的蓝色基础光晕，确保不再发蓝。 */
+.noctyra-inline-btn.noctyra-float.submitted {
+    background: rgba(20, 184, 166, 0.95);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(20, 184, 166, 0.5), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-inline-btn.noctyra-float.submitted:hover:not(.dragging) {
+    background: rgba(13, 148, 136, 1);
+    box-shadow: 0 6px 20px rgba(20, 184, 166, 0.6), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+
+/* ---- Image page resource marks ---- */
+.noctyra-resource-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    margin: 0 4px;
+    vertical-align: middle;
+    align-self: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.noctyra-resource-mark.downloaded {
+    background: #22c55e;
+}
+.noctyra-resource-mark.not-local {
+    background: #2d7ff9;
+    opacity: 0.75;
+    cursor: pointer;
+}
+.noctyra-resource-mark.not-local:hover {
+    opacity: 1;
+    transform: scale(1.15);
+    transition: all 0.15s ease;
+}
+.noctyra-resource-mark.sending {
+    opacity: 0.5;
+    cursor: wait;
+}
+.noctyra-resource-mark.submitted {
+    background: #93c5fd;
+}
+
+/* ---- 隐藏已下载 ---- */
+html.noctyra-hide-downloaded .noctyra-has-badge {
+    display: none !important;
+}
+
+/* ---- 连接状态提示条（后端不可达时左下角一次性提示，可关闭，本会话不再扰） ---- */
+.noctyra-conn-banner {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 2147483646;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    max-width: 340px;
+    padding: 10px 12px;
+    background: rgba(28, 20, 8, 0.94);
+    color: #fcd34d;
+    font-family: 'HarmonyOS Sans SC', 'HarmonyOS Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.4;
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.25s, transform 0.25s;
+}
+.noctyra-conn-banner.show { opacity: 1; transform: none; }
+.noctyra-conn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #fbbf24;
+    flex-shrink: 0;
+    animation: noctyra-conn-pulse 1.8s ease-out infinite;
+}
+@keyframes noctyra-conn-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5); }
+    70%  { box-shadow: 0 0 0 7px rgba(251, 191, 36, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+}
+.noctyra-conn-text { flex: 1; }
+.noctyra-conn-x {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #fcd34d;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    padding: 0 2px;
+}
+.noctyra-conn-x:hover { opacity: 1; }
+
+/* ---- Toast ---- */
+.noctyra-toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: #1d6bf0;
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-family: 'HarmonyOS Sans SC', 'HarmonyOS Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 2147483647;
+    pointer-events: none;
+}
+.noctyra-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* ---- Image page: 保存图片浮动按钮（可拖拽 + 边缘吸附） ----
+   位置由 JS 管理（chrome.storage.sync 持久化），不在 CSS 里写死 right/bottom */
+.noctyra-image-save-btn {
+    position: fixed;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #2d7ff9 0%, #4d95fb 100%);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    font-family: 'HarmonyOS Sans SC', 'HarmonyOS Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    box-shadow: 0 4px 14px rgba(45, 127, 249, 0.45), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+    transition: background 0.15s, box-shadow 0.15s,
+                left 0.25s ease, right 0.25s ease, top 0.25s ease, transform 0.1s ease;
+    z-index: 2147483646;
+}
+.noctyra-image-save-btn:hover:not(:disabled):not(.dragging) {
+    background: #4d95fb;
+    box-shadow: 0 6px 20px rgba(45, 127, 249, 0.55), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-image-save-btn:active:not(:disabled):not(.dragging) {
+    transform: translateY(1px);
+}
+.noctyra-image-save-btn.dragging {
+    cursor: grabbing;
+    transition: none;
+    transform: scale(1.04);
+}
+.noctyra-image-save-btn:disabled {
+    opacity: 0.75;
+    cursor: default;
+}
+.noctyra-image-save-btn svg {
+    flex-shrink: 0;
+    opacity: 0.95;
+}
+.noctyra-image-save-btn.submitted {
+    background: #16a34a;
+    box-shadow: 0 4px 14px rgba(22, 163, 74, 0.45), 0 1px 0 rgba(0, 0, 0, 0.18) inset;
+}
+.noctyra-image-save-btn.already-exists {
+    background: rgba(74, 222, 128, 0.18);
+    color: #4ade80;
+    box-shadow: inset 0 0 0 1px rgba(74, 222, 128, 0.5);
+}

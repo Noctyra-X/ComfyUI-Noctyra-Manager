@@ -1,0 +1,365 @@
+/* ========== Download Modal ========== */
+.dl-body {
+    padding: 0 24px 24px;
+}
+
+.dl-step-title {
+    font-size: var(--text-md);
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+}
+
+.dl-url-row {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.dl-url-row .settings-input {
+    flex: 1;
+}
+
+.dl-hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+.dl-model-header {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dl-model-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.dl-model-meta {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.dl-section-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin: 16px 0 8px;
+}
+
+.dl-version-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.dl-version-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.dl-version-item:hover {
+    border-color: var(--accent);
+}
+
+.dl-version-item.selected {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.08);
+}
+
+.dl-version-item input[type="radio"] {
+    display: none;
+}
+
+.dl-version-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.dl-version-name {
+    font-size: var(--text-base);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.dl-version-meta {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.dl-version-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-xs);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.dl-dir-select {
+    width: 100%;
+}
+
+.dl-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: 20px;
+}
+
+.dl-progress-info {
+    padding: 20px 0;
+}
+
+.dl-progress-name {
+    font-size: var(--text-base);
+    color: var(--text-primary);
+    margin-bottom: 12px;
+}
+
+.dl-progress-bar-wrap {
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.dl-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+
+.dl-progress-text {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+
+/* ========== Download Tasks ========== */
+
+.dl-tasks-header {
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 16px 0 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.dl-task {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+}
+
+.dl-task-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.dl-task-name {
+    font-size: var(--text-base);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70%;
+}
+
+.dl-task-status {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.dl-status-ok {
+    color: var(--success);
+}
+
+.dl-status-err {
+    color: var(--danger);
+}
+
+.dl-task-bottom {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: 6px;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+
+.dl-task-speed {
+    color: var(--accent);
+    font-weight: 500;
+}
+
+.dl-task-eta {
+    margin-left: auto;
+}
+
+.dl-cancel-btn {
+    font-size: var(--text-xs);
+    padding: 2px 8px;
+}
+
+/* 下载任务操作按钮容器(图标按钮复用全局 .tc-act-btn 样式) */
+.dl-task-acts { display: inline-flex; align-items: center; gap: 6px; }
+.dl-status-paused { color: #f59e0b; }
+.dl-progress-bar-wrap.dl-bar-paused .dl-progress-bar { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.dl-progress-bar-wrap.dl-bar-err .dl-progress-bar { background: var(--danger); opacity: 0.65; }
+
+/* ========== Import Modal ========== */
+.im-body {
+    padding: 0 24px 24px;
+}
+
+.im-target-hint {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: 14px;
+}
+
+.im-target-hint code {
+    background: var(--surface-2, rgba(255,255,255,0.04));
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+
+.im-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 28px 16px;
+    text-align: center;
+    transition: all var(--transition);
+    cursor: default;
+}
+
+.im-dropzone.drag-over {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.06);
+}
+
+.im-dz-icon {
+    font-size: 28px;
+    opacity: 0.6;
+    margin-bottom: 6px;
+}
+
+.im-dz-main {
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.im-dz-sub {
+    font-size: var(--text-base);
+    color: var(--text-muted);
+    margin-top: 6px;
+}
+
+.im-dz-hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin-top: 10px;
+    line-height: 1.5;
+}
+
+.im-divider {
+    display: flex;
+    align-items: center;
+    margin: 18px 0 14px;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}
+
+.im-divider::before,
+.im-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.im-divider span {
+    padding: 0 12px;
+}
+
+.im-path-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.im-path-label {
+    font-size: var(--text-base);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.im-path-input-row {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.im-path-input-row .settings-input {
+    flex: 1;
+    min-width: 240px;
+}
+
+.im-move-label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    user-select: none;
+    cursor: pointer;
+}
+
+.im-progress {
+    margin-top: 16px;
+}
+
+.im-progress-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.im-progress-bar {
+    background: var(--surface-2, rgba(255,255,255,0.04));
+    border-radius: 4px;
+    overflow: hidden;
+    height: 6px;
+}
+
+.im-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.15s ease-out;
+}
+

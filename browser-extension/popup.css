@@ -1,0 +1,564 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* 配色对齐主界面（manager/web/static/css/style.css）的蓝色品牌体系；
+   popup 窗口小，圆角/间距保留紧凑值，不照搬主界面的 12/18px。
+   注：popup 外层窗口圆角由 Chrome / 系统绘制，CSS 改不了 */
+:root {
+    --bg: #18181c;
+    --bg-elev: #1e1e24;
+    --bg-soft: #23232b;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.12);
+    --text: #ececee;
+    --text-mute: #8b8d98;
+    --text-faint: #5a5d68;
+    --accent: #2d7ff9;
+    --accent-hover: #4d95fb;
+    --accent-soft: rgba(45, 127, 249, 0.14);
+    --accent-glow: rgba(45, 127, 249, 0.3);
+    --accent-grad-2: #5ba0fc;
+    --success: #34d399;
+    --danger: #f87171;
+    --warning: #fbbf24;
+    --radius: 8px;
+    --radius-sm: 6px;
+    /* 用于覆盖纯白半透明 / 纯黑半透明（dark 用白色叠层，light 用黑色叠层） */
+    --tint-soft: rgba(255, 255, 255, 0.06);
+    --tint-hover: rgba(255, 255, 255, 0.12);
+    --tint-strong: rgba(255, 255, 255, 0.25);
+}
+
+/* 浅色主题：跟随系统 prefers-color-scheme，无需手动开关 */
+@media (prefers-color-scheme: light) {
+    :root {
+        --bg: #ffffff;
+        --bg-elev: #f5f5f7;
+        --bg-soft: #ebebf0;
+        --border: rgba(0, 0, 0, 0.08);
+        --border-strong: rgba(0, 0, 0, 0.16);
+        --text: #1a1a1f;
+        --text-mute: #6a6c75;
+        --text-faint: #95979f;
+        --accent: #1c6ce8;
+        --accent-hover: #2d7ff9;
+        --accent-soft: rgba(28, 108, 232, 0.10);
+        --accent-glow: rgba(28, 108, 232, 0.22);
+        --tint-soft: rgba(0, 0, 0, 0.05);
+        --tint-hover: rgba(0, 0, 0, 0.10);
+        --tint-strong: rgba(0, 0, 0, 0.20);
+    }
+}
+
+/* popup 外壳圆角 hack：新版 Chromium 在 Win11 上会跟随 html/body 的 border-radius
+   旧版浏览器忽略，CSS 不会出错。无法 100% 保证生效（OS 控制窗口边） */
+html {
+    background: var(--bg);
+    border-radius: 12px;
+    overflow: hidden;
+}
+body {
+    font-family: 'HarmonyOS Sans SC', 'HarmonyOS Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+    /* 顶部品牌辉光 + 纯底色：比平涂更有质感、不喧宾夺主 */
+    background:
+        radial-gradient(125% 80% at 50% -12%, var(--accent-soft) 0%, transparent 46%),
+        var(--bg);
+    color: var(--text);
+    width: 400px;
+    /* 整体 popup 高度下限：header + tabs + sub-tabs + download-list min-height + padding
+       让设置 tab 切换时不会突然变扁 */
+    min-height: 480px;
+    padding: 14px;
+    font-size: 13px;
+    overflow-x: hidden;
+    border-radius: 12px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---- Header ---- */
+header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.logo-badge {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    /* 品牌光环 + 细描边，让 logo 从背景里"浮"起来 */
+    box-shadow: 0 2px 10px var(--accent-glow), 0 0 0 1px var(--border-strong);
+}
+.logo-badge .logo-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+header > div:nth-child(2) { flex: 1; min-width: 0; }
+
+h1 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.01em;
+}
+
+.status {
+    font-size: 11px;
+    color: var(--text-mute);
+    margin-top: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+.status::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    box-shadow: 0 0 0 2px rgba(90, 93, 104, 0.15);
+}
+.status.healthy { color: var(--success); }
+.status.healthy::before {
+    background: var(--success);
+    box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.2),
+                0 0 8px rgba(52, 211, 153, 0.5);
+}
+.status.error { color: var(--danger); }
+.status.error::before {
+    background: var(--danger);
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2);
+}
+
+section { margin-bottom: 14px; }
+section:last-child { margin-bottom: 0; }
+
+/* ---- Base button ---- */
+button {
+    width: 100%;
+    padding: 9px 12px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.08s ease, box-shadow 0.15s ease;
+    font-family: inherit;
+}
+button:hover:not(:disabled) {
+    background: var(--accent-hover);
+    box-shadow: 0 2px 8px rgba(45, 127, 249, 0.3);
+}
+button:active:not(:disabled) { transform: translateY(1px); }
+button:disabled {
+    background: var(--tint-hover);
+    color: var(--text-mute);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+/* clear-btn 是 outline 风格的轮廓按钮（透明底 + 边框），disabled 时要保持轮廓
+   不能被 base button:disabled 的实心灰背景覆盖 */
+.clear-btn:disabled {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text-faint);
+}
+
+/* ---- Settings form ---- */
+.settings label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.settings label span {
+    width: 44px;
+    color: var(--text-mute);
+    font-size: 12px;
+    font-weight: 500;
+}
+.settings input {
+    flex: 1;
+    padding: 8px 11px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color 0.15s, background 0.15s;
+}
+.settings input:hover { border-color: var(--border-strong); }
+.settings input:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--bg-soft);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.info {
+    font-size: 11px;
+    color: var(--text-mute);
+    padding: 9px 11px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    line-height: 1.5;
+}
+
+footer { margin-top: 10px; }
+footer .link-btn {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--border-strong);
+    font-weight: 500;
+}
+footer .link-btn:hover:not(:disabled) {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-hover);
+    box-shadow: none;
+}
+
+/* ---- Tabs ---- */
+.tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+}
+.tab {
+    flex: 1;
+    width: auto;
+    background: transparent;
+    color: var(--text-mute);
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 9px 8px;
+    border-radius: 0;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+}
+.tab:hover:not(.active) {
+    color: var(--text);
+    background: transparent;
+    box-shadow: none;
+}
+.tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: transparent;
+    box-shadow: none;
+}
+
+.panel { display: none; }
+.panel.active { display: block; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-2px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Sub-tabs (filter) ---- */
+.tab-bar {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 10px;
+    align-items: center;
+}
+.sub-tab {
+    background: var(--bg-elev);
+    color: var(--text-mute);
+    border: 1px solid transparent;
+    padding: 5px 11px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    width: auto;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.15s;
+}
+.sub-tab:hover:not(.active) {
+    background: var(--bg-soft);
+    color: var(--text);
+    box-shadow: none;
+}
+.sub-tab.active {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(45, 127, 249, 0.3);
+}
+.sub-tab .count {
+    display: inline-block;
+    min-width: 16px;
+    text-align: center;
+    padding: 1px 5px;
+    background: var(--tint-strong);
+    color: var(--text);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+.sub-tab.active .count {
+    background: rgba(255, 255, 255, 0.25);
+    color: #fff;
+}
+.clear-btn {
+    margin-left: auto;
+    width: auto;
+    padding: 5px 11px;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text-mute);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    font-weight: 600;
+}
+.clear-btn:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.08);
+    color: var(--danger);
+    border-color: rgba(248, 113, 113, 0.4);
+    box-shadow: none;
+}
+
+/* ---- Download list ---- */
+.download-list {
+    /* 默认更"满"：空状态/少量项也保持一定高度，popup 不会看起来很扁 */
+    min-height: 320px;
+    max-height: 520px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding-right: 2px;
+    margin-right: -2px;
+}
+.download-list::-webkit-scrollbar { width: 6px; }
+.download-list::-webkit-scrollbar-track { background: transparent; }
+.download-list::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 3px;
+}
+.download-list::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+.download-list .empty {
+    text-align: center;
+    color: var(--text-faint);
+    padding: 36px 20px;
+    font-size: 12px;
+    background: var(--bg-elev);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+}
+/* 断连空状态：比"无任务"更有信息量，给一键去设置 */
+.empty-disconnected {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    border-style: solid;
+    border-color: rgba(251, 191, 36, 0.3);
+    background: linear-gradient(180deg, rgba(251, 191, 36, 0.05) 0%, var(--bg-elev) 60%);
+}
+.empty-disconnected .empty-title {
+    color: var(--warning);
+    font-size: 13px;
+    font-weight: 700;
+}
+.empty-disconnected .empty-sub {
+    color: var(--text-mute);
+    line-height: 1.5;
+    max-width: 260px;
+}
+.empty-disconnected .empty-act {
+    width: auto;
+    margin-top: 4px;
+    padding: 6px 16px;
+    font-size: 12px;
+    border-radius: 999px;
+}
+
+.dl-item {
+    background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg-soft) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px;
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    transition: border-color 0.15s, transform 0.12s ease, box-shadow 0.15s;
+}
+.dl-item:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.dl-item.failed {
+    border-color: rgba(248, 113, 113, 0.28);
+    background: linear-gradient(180deg, rgba(248, 113, 113, 0.04) 0%, var(--bg-elev) 50%);
+}
+.dl-item.complete {
+    border-color: rgba(52, 211, 153, 0.25);
+}
+
+.dl-thumb {
+    width: 46px;
+    height: 46px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+    background: var(--bg);
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+}
+.dl-thumb-placeholder {
+    background: linear-gradient(135deg, var(--accent) 0%, #5ba0fc 100%);
+    opacity: 0.35;
+    border: none;
+}
+
+.dl-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.dl-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.dl-name {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+}
+.dl-name-link {
+    cursor: pointer;
+    transition: color 0.15s;
+}
+.dl-name-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+.mini-btn {
+    width: auto;
+    padding: 3px 9px;
+    font-size: 10px;
+    background: var(--tint-soft);
+    color: var(--text);
+    border: 1px solid transparent;
+    border-radius: 5px;
+    font-weight: 600;
+    flex: 0 0 auto;
+    letter-spacing: 0.02em;
+}
+.mini-btn:hover:not(:disabled) {
+    background: var(--tint-hover);
+    box-shadow: none;
+}
+.mini-btn.primary {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.mini-btn.primary:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+}
+.mini-btn.danger {
+    background: rgba(248, 113, 113, 0.12);
+    color: var(--danger);
+}
+.mini-btn.danger:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.22);
+    color: var(--danger);
+}
+
+/* 下载项动作：紧凑图标按钮（暂停/继续/取消/重试/移除） */
+.dl-actions {
+    display: flex;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+.dl-act {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--tint-soft);
+    color: var(--text-mute);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.dl-act svg { width: 14px; height: 14px; display: block; }
+.dl-act:hover:not(:disabled) { background: var(--tint-hover); color: var(--text); }
+.dl-act.primary { background: var(--accent-soft); color: var(--accent); }
+.dl-act.primary:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.dl-act.danger { background: rgba(248, 113, 113, 0.12); color: var(--danger); }
+.dl-act.danger:hover:not(:disabled) { background: rgba(248, 113, 113, 0.22); color: var(--danger); }
+
+/* 暂停态：青绿描边 + 进度条变青绿（停住的感觉，呼应浮按钮的"已加入下载"色） */
+.dl-item.paused {
+    border-color: rgba(20, 184, 166, 0.32);
+    background: linear-gradient(180deg, rgba(20, 184, 166, 0.05) 0%, var(--bg-elev) 50%);
+}
+.dl-item.paused .dl-fill {
+    background: linear-gradient(90deg, #14b8a6 0%, #2dd4bf 100%);
+    box-shadow: none;
+}
+
+.dl-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--tint-soft);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.dl-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent) 0%, #5ba0fc 100%);
+    transition: width 0.3s ease;
+    box-shadow: 0 0 6px rgba(45, 127, 249, 0.5);
+}
+.dl-meta {
+    font-size: 10px;
+    color: var(--text-mute);
+    font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.02em;
+}
+.dl-meta .err { color: var(--danger); }
+.dl-item.complete .dl-meta { color: var(--success); }
