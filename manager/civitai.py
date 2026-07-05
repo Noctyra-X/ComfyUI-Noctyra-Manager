@@ -291,6 +291,8 @@ class CivitaiClient:
         传 `nsfw=X` 覆盖所有等级（None / Soft / Mature / X），否则 NSFW 图片
         （civitai.red 上大量这类）会查无结果。
         """
+        if self.is_rate_limited():
+            return None
         try:
             session = await self._get_session()
             url = f"{BASE_URL}/images"
@@ -300,7 +302,10 @@ class CivitaiClient:
                     data = await resp.json()
                     items = data.get("items", [])
                     return items[0] if items else None
-                logger.warning("[Noctyra-MM] CivitAI get_image_info(%s) HTTP %s", image_id, resp.status)
+                if resp.status == 429:
+                    self._enter_rate_limit_cooldown(self._parse_retry_after(resp.headers.get("Retry-After")))
+                else:
+                    logger.warning("[Noctyra-MM] CivitAI get_image_info(%s) HTTP %s", image_id, resp.status)
                 return None
         except aiohttp.ClientError as e:
             logger.error("[Noctyra-MM] CivitAI 获取图片信息失败: %s", e)
@@ -506,9 +511,12 @@ class CivitaiClient:
             total or "unknown", resume_offset,
         )
 
+        loop = asyncio.get_running_loop()
         with open(tmp_path, mode) as f:
             async for chunk in resp.content.iter_chunked(1024 * 1024):
-                f.write(chunk)
+                # 写盘卸载到默认线程池（不占用扫描池），别让同步 f.write 阻塞事件循环 →
+                # 下载大文件时列表/预览/出图进度不掉帧。顺序 await 保持写入有序。
+                await loop.run_in_executor(None, f.write, chunk)
                 downloaded += len(chunk)
                 if progress_callback and total > 0:
                     await progress_callback(downloaded, total)

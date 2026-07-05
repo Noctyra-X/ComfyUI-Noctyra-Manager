@@ -25,11 +25,13 @@ import {
     apiGalleryFolders, apiGalleryScan,
     apiGalleryFolderAdd, apiGalleryFolderRemove,
 } from './api.js';
+import { showPrompt, showConfirm } from '../components/dialog.js';
 
 let _onSelect = null;        // (path) => void：切换图库到该文件夹
 let _toast = () => {};       // (msg, type) => void
 let _currentFolder = '';     // 当前选中文件夹路径（''=全部）
 const _expanded = new Set(); // 展开的文件夹路径
+let _foldersCache = [];      // 最近一次后端返回的文件夹树，展开/折叠纯本地重渲染用（不重拉后端）
 
 export function getCurrentFolder() {
     return _currentFolder;
@@ -94,7 +96,14 @@ function _startScanPoller() {
     }, 2000);
 }
 
+// 用缓存的文件夹树本地重渲染（展开/折叠时用，不触后端）
+function rerenderTree() {
+    const tree = document.getElementById('wf-folder-tree');
+    if (tree) renderTree(tree, _foldersCache);
+}
+
 function renderTree(container, folders) {
+    _foldersCache = folders;   // 记下最新数据，供展开/折叠本地重渲染复用
     let html = `<div class="wf-folder-node wf-folder-all${_currentFolder === '' ? ' active' : ''}" data-path="" data-act="select">
         <span class="wf-folder-caret-empty"></span>
         <span class="wf-folder-name">全部</span>
@@ -132,7 +141,8 @@ function onTreeClick(e) {
         e.stopPropagation();
         const p = caret.dataset.path;
         if (_expanded.has(p)) _expanded.delete(p); else _expanded.add(p);
-        loadFolders();
+        // 展开/折叠纯 UI：只切本地 _expanded + 用缓存重渲染，不重拉后端/不打全表 SELECT/不 scandir
+        rerenderTree();
         return;
     }
     const rm = e.target.closest('[data-act="remove"]');
@@ -174,7 +184,12 @@ async function doScan() {
 }
 
 async function doAddFolder() {
-    const path = window.prompt('输入要注册的文件夹绝对路径\n（如 ComfyUI 的 output 目录、存放下载图的目录等；原地索引，不拷贝）');
+    const path = await showPrompt({
+        title: '注册文件夹',
+        message: '输入要注册的文件夹绝对路径\n（如 ComfyUI 的 output 目录、存放下载图的目录等；原地索引，不拷贝）',
+        placeholder: 'E:\\ComfyUI\\output',
+        okText: '添加',
+    });
     if (!path || !path.trim()) return;
     try {
         const res = await apiGalleryFolderAdd(path.trim());
@@ -192,7 +207,12 @@ async function doAddFolder() {
 
 async function doRemoveFolder(path) {
     if (!path) return;
-    if (!window.confirm('取消注册此文件夹？\n只移除图库索引记录，磁盘上的文件不会被删除。')) return;
+    if (!await showConfirm({
+        title: '取消注册',
+        message: '取消注册此文件夹？\n只移除图库索引记录，磁盘上的文件不会被删除。',
+        okText: '取消注册',
+        danger: true,
+    })) return;
     try {
         const res = await apiGalleryFolderRemove(path);
         if (res && res.success) {

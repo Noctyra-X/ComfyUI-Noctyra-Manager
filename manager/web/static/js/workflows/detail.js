@@ -63,6 +63,34 @@ async function _copyText(text) {
 }
 
 
+// 详情加载中的骨架屏：进入即渲染，让弹窗立刻出现（不再"点了没反应"）
+function _skeletonHtml() {
+    const bar = (w, h) => `<div class="skeleton-shimmer" style="width:${w};height:${h};border-radius:6px;margin-bottom:10px"></div>`;
+    return `
+        <div class="wf-preview-panel">
+            <div class="wf-preview-container">
+                <div class="skeleton-shimmer" style="width:100%;height:auto;aspect-ratio:3/4;border-radius:12px"></div>
+            </div>
+        </div>
+        <div class="wf-params-panel">
+            ${bar('55%', '20px')}
+            ${bar('90%', '14px')}
+            ${bar('80%', '14px')}
+            ${bar('70%', '14px')}
+            ${bar('85%', '14px')}
+        </div>`;
+}
+
+// 详情加载失败/空态：给出可见反馈，避免静默
+function _detailErrorHtml(msg) {
+    return `
+        <div class="wf-params-empty" style="margin:auto">
+            <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <p>无法加载该项详情</p>
+            <span>${escapeHtml(msg || '数据不存在或已被移除')}</span>
+        </div>`;
+}
+
 export function openDetail(imageId) {
     const overlay = document.getElementById('detail-overlay');
     const body = document.getElementById('detail-body');
@@ -71,11 +99,18 @@ export function openDetail(imageId) {
     const mySession = ++_detailSession;
     const isStale = () => mySession !== _detailSession;
 
+    // 进入即先显示弹窗 + 骨架：无论后续加载成功/失败/慢，点击都立刻有反馈
+    if (body) body.innerHTML = _skeletonHtml();
+    if (overlay) overlay.classList.add('show');
+
     fetch(`${API_BASE}/gallery/${imageId}`)
         .then(r => r.json())
         .then(res => {
             if (isStale()) return;
-            if (!res.success || !res.image) return;
+            if (!res.success || !res.image) {
+                if (body) body.innerHTML = _detailErrorHtml(res && res.error);
+                return;
+            }
             const img = res.image;
             const meta = img.meta || {};
             const resources = img.resources || [];
@@ -498,6 +533,11 @@ export function openDetail(imageId) {
             }
 
             overlay.classList.add('show');
+        })
+        .catch(err => {
+            if (isStale()) return;
+            if (body) body.innerHTML = _detailErrorHtml(err && err.message);
+            _toast('加载详情失败：' + ((err && err.message) || '网络错误'), 'error');
         });
 }
 

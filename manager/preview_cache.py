@@ -109,6 +109,10 @@ class PreviewCache:
         # 换成"一次 listdir + 内存查"，避免列表分页时几千次同步 stat 阻塞事件循环
         self._keys_snapshot: Optional[set] = None
         self._keys_snapshot_ts = 0.0
+        # 缓存统计结果（短 TTL）：2 万+文件全盘 scandir 约 0.8s，设置页轮询/重复请求时复用，
+        # 避免频繁重扫。文件增删由 clear_thumbs / cleanup_orphaned 主动置失效。
+        self._cache_stats_cache: Optional[dict] = None
+        self._cache_stats_ts = 0.0
         # 缩略图 per-source 串行锁:同图并发请求只生成一次,其余等待复用(在线程池里跑,用 threading.Lock)
         self._thumb_locks: dict = {}
         self._thumb_locks_guard = threading.Lock()
@@ -221,12 +225,13 @@ class PreviewCache:
                         im = im.convert("RGB")
                     w, h = im.size
                     if w > self._THUMB_WIDTH:
-                        im = im.resize(
-                            (self._THUMB_WIDTH, max(1, round(h * self._THUMB_WIDTH / w))),
-                            Image.LANCZOS,
-                        )
+                        # thumbnail 原地缩放 + reducing_gap 分级预缩，比 resize+LANCZOS 快很多；
+                        # 高度传原始 h（非约束项）等价"只按宽 480 收窄"、保持纵横比。
+                        # 注意：thumbnail 就地修改并返回 None，勿写回 im=；也别用 Image.draft()（仅 JPEG 有效）
+                        im.thumbnail((self._THUMB_WIDTH, h), Image.LANCZOS, reducing_gap=2.0)
                     tmp = f"{thumb_path}.{uuid.uuid4().hex[:8]}.tmp"
-                    im.save(tmp, "WEBP", quality=82, method=4)
+                    # WEBP method 从 4 降到 2：压缩耗时大减，体积略增、quality 保持 82
+                    im.save(tmp, "WEBP", quality=82, method=2)
                 os.replace(tmp, thumb_path)
                 return thumb_path
             except Exception as e:
@@ -492,9 +497,11 @@ class PreviewCache:
 
     # ========== 后台预热队列 ==========
 
-    def schedule_prewarm(self, urls) -> int:
+    def schedule_prewarm(self, urls, skip_cached_check: bool = False) -> int:
         """把 URL 扔进后台预热队列；已在磁盘 / 已在队列 / 已知死链的跳过。
-        返回新入队数量；首次调用会懒启动 worker。"""
+        返回新入队数量；首次调用会懒启动 worker。
+        skip_cached_check=True：调用方（如 nofetch 网格请求）刚确认过未命中，
+        跳过这里重复的磁盘 isfile 复查；worker 里 ensure_cached 仍会兜底判缓存，安全。"""
         # 新一轮判定 → 清零进度计数（给任务中心用）。仅靠 worker.done() 不够：worker 空闲 5 分钟
         # 才退出，期间浏览(nofetch)/匹配的零散预热会累加进上一轮旧计数，进度条显示失真。
         # 故再加"上一轮已全部处理完(done+failed 达 total 且队列空)"也算新一轮。
@@ -520,7 +527,7 @@ class PreviewCache:
                 continue
             if u in self._prewarm_pending:
                 continue
-            if self.get_cached_path(u):
+            if not skip_cached_check and self.get_cached_path(u):
                 continue
             self._prewarm_pending.add(u)
             added += 1
@@ -691,31 +698,44 @@ class PreviewCache:
         # 缩略图按源路径哈希命名，无法反查源是否还在；本地图/图库图的缩略图不在上面
         # 的预览缓存目录里，删模型后会留孤儿。缩略图是可再生缓存，这里按体积上限淘汰旧的兜底。
         self._prune_thumbs()
+        self._cache_stats_ts = 0.0   # 文件已变，置统计缓存失效，下次立即重算
         return removed
 
-    def get_cache_stats(self) -> dict:
-        """预览图缓存 + 缩略图缓存的文件数与总字节数（设置页"缓存管理"展示用）。"""
+    def get_cache_stats(self, ttl: float = 5.0) -> dict:
+        """预览图缓存 + 缩略图缓存的文件数与总字节数（设置页"缓存管理"展示用）。
+        CPU/IO 密集（2 万+文件全盘扫描），应在 executor 里调用，勿阻塞事件循环。
+        结果缓存 ~5s（ttl），避免频繁重扫；文件增删的接口会主动置失效。"""
+        now = time.monotonic()
+        cached = self._cache_stats_cache
+        if cached is not None and (now - self._cache_stats_ts) < ttl:
+            return cached
+
         def _dir_stat(d):
             cnt = total = 0
             try:
-                for fn in os.listdir(d):
-                    fp = os.path.join(d, fn)
-                    try:
-                        if not os.path.isfile(fp):  # 跳过 thumbs 子目录等
+                # scandir 一次拿到 dir entry 的类型/大小（Windows 上无需逐文件额外 stat 系统调用），
+                # 比 listdir + isfile + getsize 快得多
+                with os.scandir(d) as it:
+                    for entry in it:
+                        try:
+                            if not entry.is_file():  # 跳过 thumbs 子目录等
+                                continue
+                            total += entry.stat().st_size
+                        except OSError:
                             continue
-                        total += os.path.getsize(fp)
-                    except OSError:
-                        continue
-                    cnt += 1
+                        cnt += 1
             except OSError:
                 pass
             return cnt, total
         p_cnt, p_bytes = _dir_stat(self._cache_dir)
         t_cnt, t_bytes = _dir_stat(self._thumb_dir)
-        return {
+        stats = {
             "preview_count": p_cnt, "preview_bytes": p_bytes,
             "thumb_count": t_cnt, "thumb_bytes": t_bytes,
         }
+        self._cache_stats_cache = stats
+        self._cache_stats_ts = now
+        return stats
 
     def clear_thumbs(self) -> int:
         """清空全部缩略图（可再生缓存，下次浏览自动重建）。返回删除数量。"""
@@ -734,6 +754,7 @@ class PreviewCache:
             pass
         if removed:
             logger.info("[Noctyra-MM] 清空缩略图缓存：删除 %d 个", removed)
+        self._cache_stats_ts = 0.0   # 文件已变，置统计缓存失效，下次立即重算
         return removed
 
     def _prune_thumbs(self, max_bytes: int = 512 * 1024 * 1024) -> int:

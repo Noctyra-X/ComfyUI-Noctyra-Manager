@@ -69,6 +69,11 @@ async function injectPanelIfModelPage() {
 
     const status = { versionId: info.versionId, modelId: info.modelId, downloaded: null, recordOnly: null, otherVersions: [] };
 
+    // 浮动按钮不依赖 CivitAI DOM，也不该被 checkVersions 的网络往返阻塞：
+    // 先用初始 status 立即画出按钮（后端不通时不再最长干等 send 超时才出现），
+    // 后端返回后再更新状态。下面的 session 守卫保证迟到响应不覆盖已切走的新页。
+    await renderFloatingButton(status);
+
     const payload = {
         version_ids: info.versionId ? [info.versionId] : [],
         model_ids: info.modelId ? [info.modelId] : [],
@@ -90,26 +95,40 @@ async function injectPanelIfModelPage() {
         }
     }
 
-    // 浮动按钮不依赖 CivitAI DOM 加载，立即渲染
-    await renderFloatingButton(status);
+    // floatBtn 已在上面创建 → 走更新路径，用后端结果刷新状态
+    if (floatBtn) updateFloatingButtonState(floatBtn, status);
+    else await renderFloatingButton(status);
 
-    // 版本选择按钮的绿色描边（独立功能，仍需要等 DOM 加载）
-    markDownloadedVersionButtons(status.otherVersions || []);
-    let tries = 0;
-    injectRetryTimer = setInterval(() => {
-        if (mySession !== injectSession) { clearInterval(injectRetryTimer); injectRetryTimer = null; return; }
-        tries++;
-        markDownloadedVersionButtons(status.otherVersions || []);
-        if (tries >= 24) { clearInterval(injectRetryTimer); injectRetryTimer = null; }
-    }, 500);
+    // 版本选择按钮的绿色描边（独立功能，仍需等 DOM hydration）。
+    // 用 settle 检测替代固定 500ms×24(=12s) 定时器（那个标完也不停、每页固定烧 12s）：
+    // 连续 2 次无新增命中即认为 DOM 稳定→停表；硬上限 5 次(2.5s)兜底 late hydration；
+    // 首次命中之前保持重试(不早停)，避免 hydration 未完成就退出。
+    // 注意：不能"全命中即停"——本地拥有的版本可能已不在页面选择器里，永远达不到全命中。
+    // markDownloadedVersionButtons 返回本次"新增命中数"供判稳。
+    const otherVersions = status.otherVersions || [];
+    let everMarked = markDownloadedVersionButtons(otherVersions) > 0;
+    if (otherVersions.length > 0) {
+        let tries = 0, stableRounds = 0;
+        injectRetryTimer = setInterval(() => {
+            if (mySession !== injectSession) { clearInterval(injectRetryTimer); injectRetryTimer = null; return; }
+            tries++;
+            const n = markDownloadedVersionButtons(otherVersions);
+            if (n > 0) everMarked = true;
+            // 只有已经标到过之后才用"连续无新增"判稳；标到之前保持重试以兜 late hydration
+            stableRounds = (everMarked && n === 0) ? stableRounds + 1 : 0;
+            if (stableRounds >= 2 || tries >= 5) { clearInterval(injectRetryTimer); injectRetryTimer = null; }
+        }, 500);
+    }
 }
 
+// 返回本次"新增命中数"（本轮新描边的按钮个数），供 settle 检测判稳；
+// 已标记过的按钮不再计数（幂等），故稳定后返回 0。
 function markDownloadedVersionButtons(versions) {
-    if (!versions || versions.length === 0) return;
+    if (!versions || versions.length === 0) return 0;
     const dlNames = versions
         .map(v => (v.version_name || '').trim())
         .filter(Boolean);
-    if (dlNames.length === 0) return;
+    if (dlNames.length === 0) return 0;
 
     // 模型详情页的版本选择区内的 compact-sm 按钮
     // Why: 全局 compact-sm 会命中分页/排序按钮（比如 "1" "2"），
@@ -118,17 +137,20 @@ function markDownloadedVersionButtons(versions) {
         'main [class*="Version"], main [class*="version"]'
     );
     const roots = scopes.length ? Array.from(scopes) : [document];
+    let newlyMarked = 0;
     for (const root of roots) {
         const btns = root.querySelectorAll('button[data-size="compact-sm"]');
         btns.forEach(b => {
             const t = (b.textContent || '').trim();
             if (!t) return;
-            if (dlNames.includes(t)) {
+            if (dlNames.includes(t) && !b.classList.contains('noctyra-version-downloaded')) {
                 b.classList.add('noctyra-version-downloaded');
                 b.title = `Noctyra: 此版本已下载`;
+                newlyMarked++;
             }
         });
     }
+    return newlyMarked;
 }
 
 // ---- Floating action button (draggable, edge-snap) ----
@@ -759,23 +781,38 @@ const cardIO = ('IntersectionObserver' in window) ? new IntersectionObserver((en
     if (any) scheduleCardFlush();
 }, { rootMargin: '400px 0px' }) : null;
 
-// 发现新的模型卡片链接，交给 IntersectionObserver 观察（进视口才查询）
+// 把单个模型链接 anchor 交给 IntersectionObserver（进视口才查询）。已有幂等守卫。
+function _observeCardAnchor(a, pageId) {
+    if (a.getAttribute(CARD_MARKED_ATTR) || a.hasAttribute('data-noctyra-io')) return;
+    const href = a.getAttribute('href') || '';
+    if (SUBPAGE_RE.test(href)) return;
+    const m = href.match(/\/models\/(\d+)(?:\/|\?|$)/);
+    if (!m) return;
+    const id = parseInt(m[1], 10);
+    if (!id || (pageId && id === pageId)) return;
+    a._noctyraMid = id;
+    a.setAttribute('data-noctyra-io', '1');
+    cardIO.observe(a);
+}
+
+// 全文档扫描：用于初始首扫、路由切换、低频兜底补扫。
 function observeCards(root = document) {
     if (isImagePage()) return;
     if (!cardIO) { flushCardScan(true); return; }   // 老浏览器兜底：直接全页扫
     const pageId = currentPageModelId();
-    root.querySelectorAll('a[href*="/models/"]').forEach(a => {
-        if (a.getAttribute(CARD_MARKED_ATTR) || a.hasAttribute('data-noctyra-io')) return;
-        const href = a.getAttribute('href') || '';
-        if (SUBPAGE_RE.test(href)) return;
-        const m = href.match(/\/models\/(\d+)(?:\/|\?|$)/);
-        if (!m) return;
-        const id = parseInt(m[1], 10);
-        if (!id || (pageId && id === pageId)) return;
-        a._noctyraMid = id;
-        a.setAttribute('data-noctyra-io', '1');
-        cardIO.observe(a);
-    });
+    root.querySelectorAll('a[href*="/models/"]').forEach(a => _observeCardAnchor(a, pageId));
+}
+
+// 增量扫描单个新增节点（MutationObserver 回调用）：只看这个新子树，避免每次突变
+// 都对整个文档 querySelectorAll（无限滚动烧 CPU 的根源）。
+// React 常直接把 <a href="/models/…"> 作为 addedNode 插入，故须处理节点自身 + 后代。
+function observeCardsIn(node) {
+    if (!node || node.nodeType !== 1) return;   // 只处理元素节点（文本/注释忽略）
+    if (isImagePage()) return;
+    if (!cardIO) { flushCardScan(true); return; }   // 老浏览器兜底：直接全页扫
+    const pageId = currentPageModelId();
+    if (node.matches && node.matches('a[href*="/models/"]')) _observeCardAnchor(node, pageId);   // 节点自身
+    if (node.querySelectorAll) node.querySelectorAll('a[href*="/models/"]').forEach(a => _observeCardAnchor(a, pageId));   // 后代
 }
 
 function scheduleCardFlush() {
@@ -834,8 +871,9 @@ async function flushCardScan(fallbackFull) {
 }
 
 // 低频全量补扫兜底：findCardLinks 只看 CARD_MARKED_ATTR，故能重新拾起"网络抖动时
-// 漏标"的卡片(后端恢复后即补上徽章)。比旧的 1s 轮询省，又堵住 IO 一次性 unobserve 的漏标。
-let _safetyRescan = setInterval(() => { if (document.hidden) return; if (!isImagePage()) flushCardScan(true); }, 8000);
+// 漏标"的卡片(后端恢复后即补上徽章)。增量 observeCardsIn 已接管常规新卡发现，这里只做
+// 稀疏兜底(堵 IO 一次性 unobserve 漏标 / 属性变更未触发 childList 的漏网)，拉长到 25s 省 CPU。
+let _safetyRescan = setInterval(() => { if (document.hidden) return; if (!isImagePage()) flushCardScan(true); }, 25000);
 
 // 兼容旧调用名：现在统一走"发现新卡片→观察→进视口才查"。debounce 避免突变风暴里反复 querySelectorAll
 function scheduleScan() {
@@ -866,13 +904,17 @@ function _isRelevantNode(n) {
 new MutationObserver((records) => {
     let relevant = false;
     for (const rec of records) {
-        for (const n of rec.addedNodes)   { if (_isRelevantNode(n)) { relevant = true; break; } }
-        if (relevant) break;
-        for (const n of rec.removedNodes) { if (_isRelevantNode(n)) { relevant = true; break; } }
-        if (relevant) break;
+        for (const n of rec.addedNodes) {
+            if (!_isRelevantNode(n)) continue;
+            relevant = true;
+            observeCardsIn(n);   // 增量：只观察新子树里的模型链接，不再每次突变整页扫
+        }
+        // removedNodes 仅用于判 relevant（触发资源/路由检查），不需增量处理
+        if (!relevant) {
+            for (const n of rec.removedNodes) { if (_isRelevantNode(n)) { relevant = true; break; } }
+        }
     }
     if (!relevant) return;
-    scheduleScan();
     scheduleResourceScan();
     onUrlMaybeChanged();
 }).observe(document.body, { childList: true, subtree: true });
@@ -900,13 +942,30 @@ window.addEventListener('keydown', async (e) => {
     }
 }, true);
 
+// 复用单个 toast：连续操作只刷新文本、重置计时，不再叠成一摞盖死；
+// role="status" + aria-live="polite" 让屏幕阅读器播报状态变更。
+let _toastEl = null;
+let _toastHideTimer = null;
+let _toastRemoveTimer = null;
 function showToast(msg) {
-    const t = document.createElement('div');
-    t.className = 'noctyra-toast';
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(() => t.classList.add('show'), 10);
-    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 1800);
+    if (!_toastEl) {
+        _toastEl = document.createElement('div');
+        _toastEl.className = 'noctyra-toast';
+        _toastEl.setAttribute('role', 'status');
+        _toastEl.setAttribute('aria-live', 'polite');
+        document.body.appendChild(_toastEl);
+    }
+    const el = _toastEl;
+    clearTimeout(_toastHideTimer);
+    clearTimeout(_toastRemoveTimer);
+    el.textContent = msg;
+    requestAnimationFrame(() => el.classList.add('show'));
+    _toastHideTimer = setTimeout(() => {
+        el.classList.remove('show');
+        _toastRemoveTimer = setTimeout(() => {
+            if (_toastEl === el) { el.remove(); _toastEl = null; }
+        }, 300);
+    }, 1800);
 }
 
 // ---- 连接状态提示（治"装了像没反应"：后端没连上就静默无徽章，用户以为坏了） ----

@@ -91,6 +91,11 @@ async def api_download_model(request):
     if not any(sd_nc == r or sd_nc.startswith(r + os.sep) for r in roots):
         logger.warning("[Noctyra-MM] 下载拒绝：save_dir %s 不在模型目录内", save_dir)
         return web.json_response({"success": False, "error": "保存目录不在模型目录内"})
+    # 先解析文件名冲突（与 downloader.start 内同一逻辑），再用解析后的名去查重 + 启动：
+    # 否则查重用原名、start 里才改名，两个并发同名请求会各自解析到同一新名、写坏同一个 .tmp。
+    # 解析对 .tmp 不计数 + 这里无 await 保持原子，故 req2 会解析到同名并被 find_active_download 命中去重。
+    from .downloader import _resolve_filename_conflict
+    file_name = _resolve_filename_conflict(save_dir, file_name, download_url=download_url, version_id=version_id)
     # 同一目标已有进行中下载（连点/多入口）→ 返回它，不重复下载
     dup_id = mgr.find_active_download(save_dir, file_name)
     if dup_id:

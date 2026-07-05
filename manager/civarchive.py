@@ -31,6 +31,8 @@ import logging
 import os
 from typing import Dict, Optional
 
+from .base_models import normalize_base_model
+
 import aiohttp
 
 logger = logging.getLogger("noctyra.civarchive")
@@ -96,7 +98,8 @@ def _transform_to_civitai_info(payload: Dict) -> Optional[Dict]:
     version_id = version.get("id")
     model_name = model_ctx.get("name") or data.get("name") or ""
     version_name = version.get("name") or data.get("versionName") or ""
-    base_model = version.get("baseModel") or data.get("baseModel") or "Unknown"
+    # 归一化 base_model（对齐 civitai.py 的处理），避免同底模因来源不同归到不同桶
+    base_model = normalize_base_model(version.get("baseModel") or data.get("baseModel") or "Unknown")
     model_type = model_ctx.get("type") or data.get("type") or ""
     description = model_ctx.get("description") or data.get("description") or ""
     is_nsfw = bool(model_ctx.get("is_nsfw") or model_ctx.get("nsfw") or data.get("is_nsfw"))

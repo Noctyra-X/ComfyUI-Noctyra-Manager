@@ -1,7 +1,7 @@
 [project]
 name = "ComfyUI-Noctyra-Manager"
 description = "Standalone model manager + workflow gallery with CivitAI & HuggingFace matching, plus Chrome extension"
-version = "1.0.0"
+version = "1.0.1"
 license = "GPL-3.0-or-later"
 dependencies = ["Pillow", "numpy", "requests", "aiohttp", "safetensors"]
 

@@ -27,19 +27,9 @@ const DEFAULT_HOST = '127.0.0.1';
 function isAllowedHost(host) {
     if (!host) return false;
     host = String(host).trim().toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
-    const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (m) {
-        const oct = m.slice(1).map(Number);
-        if (oct.some(n => n > 255)) return false;   // 非法 IP 段（如 10.999.x.x）直接拒
-        const [a, b] = oct;
-        if (a === 10) return true;
-        if (a === 172 && b >= 16 && b <= 31) return true;
-        if (a === 192 && b === 168) return true;
-        return false;
-    }
-    if (host.endsWith('.local')) return true;
-    return false;
+    // 只允许本机：manifest host_permissions 只授了 127.0.0.1/localhost，私网/.local 即便放行
+    // 也会被浏览器静默拦截 fetch。与 popup.js 的 isAllowedHost 保持一致。
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
 }
 
 async function getConfig() {
@@ -223,7 +213,9 @@ async function refreshBadge() {
     try {
         const data = await noctyraFetch('/api/noctyra/downloads');
         const active = (data?.downloads || []).filter(d => d.status === 'downloading' || d.status === 'queued').length;
-        const failed = (data?.downloads || []).filter(d => d.status === 'error' || d.status === 'cancelled').length;
+        // 只把真正出错的算失败；用户主动取消(cancelled)不该点亮红色"!"角标，
+        // interrupted 是可续传的良性态也不算。
+        const failed = (data?.downloads || []).filter(d => d.status === 'error').length;
         if (active > 0) {
             await chrome.action.setBadgeText({ text: String(active) });
             await chrome.action.setBadgeBackgroundColor({ color: '#2d7ff9' });

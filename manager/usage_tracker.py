@@ -21,10 +21,26 @@
 解析 prompt 中的模型文件引用，更新数据库使用计数。
 """
 
+import asyncio
 import logging
 from typing import Set
 
 logger = logging.getLogger("noctyra.usage_tracker")
+
+
+def _log_usage_future(fut):
+    """消费后台写库 future 的异常。
+
+    fire-and-forget 的 run_in_executor future 不被 await，若 increment_usage
+    抛异常，asyncio 会打印 "Future exception was never retrieved"。这里在 done
+    回调里显式取一次异常并降级为 debug 日志，避免未处理异常告警。"""
+    try:
+        exc = fut.exception()
+    except Exception:
+        # future 被取消（CancelledError）等情况，忽略
+        return
+    if exc is not None:
+        logger.debug("[Noctyra-MM] 使用统计写库失败: %s", exc)
 
 # 已知的模型加载节点及其文件名输入字段
 _MODEL_INPUT_FIELDS = {
@@ -86,7 +102,24 @@ def setup_usage_tracking():
                 if names:
                     from .routes import get_manager
                     mgr = get_manager()
-                    mgr.db.increment_usage(list(names))
+                    name_list = list(names)
+                    # 本回调在 ComfyUI 的 async post_prompt 热路径上同步执行。
+                    # increment_usage 会持数据库写锁，直接调用会阻塞事件循环，
+                    # 拖慢每一次 prompt 提交。改成 fire-and-forget：把同步写库丢到
+                    # 线程池执行，不 await 其结果，统计语义（最终照常写库）不变。
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+                    if loop is not None:
+                        fut = loop.run_in_executor(
+                            None, mgr.db.increment_usage, name_list
+                        )
+                        # 不 await，但挂 done 回调消费异常，避免未处理异常告警。
+                        fut.add_done_callback(_log_usage_future)
+                    else:
+                        # 无运行中的 loop（非 async 上下文），退回同步写。
+                        mgr.db.increment_usage(name_list)
                     logger.debug("[Noctyra-MM] 记录模型使用: %s", ", ".join(names))
             except Exception as e:
                 logger.debug("[Noctyra-MM] 使用统计记录失败: %s", e)

@@ -107,7 +107,8 @@ async def api_preview(request):
             # 模型网格缩略图（本地优先）：未命中绝不前台联网——丢后台队列、立即 404，
             # 前端落占位 + 有界重试，后台缓存好后自愈补显。这是消除"后台跑任务时浏览器
             # 连接被占满 → 卡片卡住/滚动顿"的关键：网格请求永不阻塞在网络上。
-            cache.schedule_prewarm([url])
+            # 已知未命中（上面 get_cached_path 刚返回空），入队时跳过重复的磁盘 isfile 复查
+            cache.schedule_prewarm([url], skip_cached_check=True)
             resp = web.Response(status=404, text="not cached")
             resp.headers["Cache-Control"] = "no-store"
             return resp
@@ -161,7 +162,10 @@ async def api_cleanup_previews(request):
 async def api_cache_stats(request):
     """预览图 + 缩略图缓存统计（文件数 / 字节数）"""
     cache = _get_preview_cache()
-    return web.json_response({"success": True, "stats": cache.get_cache_stats()})
+    # 2 万+文件全盘 scandir 约 0.8s，扔线程池跑，避免冻结事件循环
+    loop = asyncio.get_running_loop()
+    stats = await loop.run_in_executor(None, cache.get_cache_stats)
+    return web.json_response({"success": True, "stats": stats})
 
 
 @_safe_handler

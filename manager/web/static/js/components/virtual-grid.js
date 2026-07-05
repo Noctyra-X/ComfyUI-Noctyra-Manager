@@ -185,8 +185,13 @@ export class VirtualGrid {
         // 补进入窗口的（批量入 fragment 一次 append）。单帧最多建 MAX_PER_FRAME 张：快速下滑/
         // 跳转时一帧要建满整窗（overscan×列数 ≈ 几十张，createModelCard 较重）会阻塞主线程 →
         // 顿 + 滚轮失灵。超额的留到下一帧续建（用户还在滑则按新窗补），主线程始终不卡死。
-        const MAX_PER_FRAME = 30;
+        // 单帧按时间预算建卡（~8ms）而非固定张数：自动适配硬件与卡片轻重——快机多建、慢机少建，
+        // 都不越 16.7ms 帧预算。留一个张数硬上限兜底防极端窗口。
+        const FRAME_BUDGET_MS = 8;
+        const HARD_CAP = 120;
+        const t0 = performance.now();
         let created = 0;
+        let overflowed = false;
         const frag = document.createDocumentFragment();
         for (let i = start; i < end; i++) {
             if (this.rendered.has(i)) continue;
@@ -194,11 +199,12 @@ export class VirtualGrid {
             this._position(el, i);
             frag.appendChild(el);
             this.rendered.set(i, el);
-            if (++created >= MAX_PER_FRAME) break;
+            created++;
+            if (created >= HARD_CAP || (performance.now() - t0) >= FRAME_BUDGET_MS) { overflowed = true; break; }
         }
         if (frag.childNodes.length) this.gridEl.appendChild(frag);
         // 本帧没建满整窗 → 下一帧继续（重置 lastRange 强制再算）。终会建完（已建的会被 has(i) 跳过）。
-        if (created >= MAX_PER_FRAME) {
+        if (overflowed) {
             this.lastRange = { start: -1, end: -1 };
             requestAnimationFrame(() => this._render(false));
         }

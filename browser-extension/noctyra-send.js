@@ -17,9 +17,11 @@
 /**
  * Shared helper: 向 background service worker 发消息并 await 返回。
  * 被 content script 和 popup 共用。
- * 10s 超时保护，避免 service worker 被浏览器终止时 UI 永久挂起。
+ * 超时保护，避免 service worker 被浏览器终止时 UI 永久挂起。
+ * 客户端超时必须 >= background 侧的 fetch 超时(12000ms)，否则"慢但会成功"的请求
+ * 会被这里先判失败，用户重试可能导致重复下载。故设 15000ms（> 服务端 12000ms）。
  */
-const NOCTYRA_SEND_TIMEOUT_MS = 10000;
+const NOCTYRA_SEND_TIMEOUT_MS = 15000;
 
 function send(action, payload, timeoutMs = NOCTYRA_SEND_TIMEOUT_MS) {
     return new Promise((resolve) => {

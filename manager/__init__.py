@@ -25,4 +25,4 @@ Noctyra Model Manager
 - Web 管理界面（集成到 ComfyUI）
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

@@ -24,7 +24,8 @@
     border: 1px solid rgba(74, 222, 128, 0.45);
     border-radius: 11px;
     box-shadow: 0 1px 5px rgba(0, 0, 0, 0.3);
-    pointer-events: none;
+    /* 不设 pointer-events:none —— 否则角标的 title 悬浮提示("本地已有 N/总 个版本")
+       会被屏蔽，鼠标悬停无提示。角标只占卡片左上角一小块，遮挡的点击面积可忽略。 */
     line-height: 1;
     letter-spacing: 0.02em;
     /* 一次性淡入：元素位置稳定，过渡只跑一次 → 不会"动画卡住" */

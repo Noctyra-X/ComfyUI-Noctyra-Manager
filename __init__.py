@@ -23,7 +23,7 @@ ComfyUI-Noctyra-Manager
 自定义节点已独立为 ComfyUI-Noctyra 插件。
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 # 此插件不注册节点。保留空映射让 ComfyUI 加载时不报错。
 NODE_CLASS_MAPPINGS = {}

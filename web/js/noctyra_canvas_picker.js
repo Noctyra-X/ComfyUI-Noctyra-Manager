@@ -103,7 +103,7 @@ const SLOT_COLORS = ["#2d7ff9", "#34d399", "#fbbf24", "#ec4899", "#a78bfa", "#f8
 
 const NOCTYRA_LOGO = `<svg viewBox="0 0 24 24" fill="currentColor"><defs><mask id="ntpm"><circle cx="12" cy="12" r="8" fill="#fff"/><circle cx="15" cy="9" r="7.2" fill="#000"/></mask></defs><circle cx="12" cy="12" r="8" mask="url(#ntpm)"/><circle cx="20" cy="4" r="0.9"/><circle cx="4.5" cy="20" r="0.7" opacity="0.7"/></svg>`;
 const PH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>`;
-// 库内指示：两个上扬 chevron（双击看触发词）
+// 库内指示：两个上扬 chevron（右键看触发词）
 const ARROWS_SVG = `<svg viewBox="0 0 22 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 8 11 3 19 8"/><polyline points="3 12 11 7 19 12"/></svg>`;
 
 const esc = (s) => String(s == null ? "" : s)
@@ -220,7 +220,7 @@ function injectStyles() {
 }
 .ntp-fab.active .ntp-fab-tag { display: flex; background: #16161a; color: #6fb0ff; border: 1px solid #2d7ff9; }
 .ntp-fab.dragging { cursor: grabbing !important; transition: none !important; }
-/* 库内指示箭头：FAB 上方两个上扬 chevron + 辉光脉冲（双击看触发词） */
+/* 库内指示箭头：FAB 上方两个上扬 chevron + 辉光脉冲（右键看触发词） */
 .ntp-fab-arrows {
     position: absolute; left: 50%; top: -15px; transform: translateX(-50%);
     width: 22px; height: 14px; color: #6ba8fd; display: none; pointer-events: none;
@@ -408,6 +408,7 @@ function injectStyles() {
     font-size: 12px; font-weight: 600; color: #ececee; line-height: 1.32; letter-spacing: -0.01em;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     overflow-wrap: anywhere; /* 长文件名（无空格）能断行，否则撑宽卡片破坏 grid */
+    min-height: calc(1.32em * 2); /* 预留两行高度：1 行 / 2 行名称的卡片下沿对齐，行距不参差（仍 line-clamp:2） */
 }
 .ntp-meta { margin-top: 6px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; min-height: 16px; }
 .ntp-badge { font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(45,127,249,0.15); color: #6fb0ff; letter-spacing: .03em; text-transform: uppercase; }
@@ -566,6 +567,8 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
     widgets = widgets.filter(Boolean);
     const addable = !!opts.onAddSlot;
     if (!widgets.length && !addable) return;
+    // NSFW 设置只在打开面板时拉一次（对齐 openMediaPicker :911）；多槽切换不再各拉一次 /settings。
+    await refreshNsfwCfg();
     let labels = slotLabels(widgets);
     const multi = widgets.length > 1 || addable;
     let active = widgets.length ? Math.max(0, Math.min(activeIdx, widgets.length - 1)) : -1;
@@ -663,8 +666,7 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
         grid.innerHTML = `<div class="ntp-empty"><div class="ntp-spinner"></div>正在向 Noctyra 查询元数据…</div>`;
         if (!slotItems[i]) {
             try {
-                const [fetched] = await Promise.all([fetchMatchItems(values), refreshNsfwCfg()]);
-                slotItems[i] = fetched || {};
+                slotItems[i] = (await fetchMatchItems(values)) || {};   // NSFW 配置已在 openPicker 开头拉过
             } catch (e) {
                 console.warn("[Noctyra] picker 元数据获取失败，降级为纯列表:", e);
                 slotItems[i] = {};
@@ -683,7 +685,7 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
         render();
         // 定位:把该槽当前选中的模型滚到可视区中部(模型多时不用手找)
         scrollToCurrent();
-        if (!vItems.some((it) => it.isCur) && w.value && w.value !== noneValueOf(w)) {
+        if (!vItems.some((it) => it.onSlots.includes(active)) && w.value && w.value !== noneValueOf(w)) {
             // 当前槽明明有值却没标记到任何卡片 → 多半是存值格式与候选项对不上。打印实际值,
             // 把控制台这行发我即可精准修(诊断用,正常匹配时不会出现)。
             console.warn("[Noctyra] 当前槽值未匹配到候选卡片 →", JSON.stringify(w.value),
@@ -694,7 +696,8 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
 
     // ---- 虚拟滚动:候选上千个时,全量渲染会让所有视频缩略图同时自动播放 + 所有 NSFW 模糊滤镜
     //      同时生效,GPU 持续满载发卡。只渲染可视窗口的几十张 → 视频/模糊数量恒定,丝滑。----
-    let vItems = [];                // 过滤后的卡片描述 [{ val, isCur, inner }]
+    let vItems = [];                // 过滤后的卡片描述 [{ val, onSlots }]（静态片段另存 vFrags，选中态按可视卡现算）
+    let vFrags = null;              // 当前槽的静态片段表 Map<val, thumb+info 的 HTML>（会话内不变）
     let vCols = 1, vColW = 158, vRowH = 220;
     const vGap = 14;                // 与 .ntp-grid 的 gap 一致
     let vp = null;                  // 内部 sizer(撑总高 + 绝对定位卡片)
@@ -702,55 +705,79 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
     const vCards = new Map();        // 下标 -> 已渲染卡片 DOM;滚动时复用(留在窗口里的不重建→视频不重载、不闪不卡)
     const vRows = () => Math.ceil(vItems.length / vCols);
 
+    // ---- 静态片段缓存：每槽一份 Map<val, thumb+info 的 HTML> ----
+    // 片段只依赖库内元数据与 NSFW 模糊配置（会话内不变），首次 loadSlot / render 建好即复用；
+    // 选中态(sbadges/current/glow)不进片段——那随 assign 变，由 buildCardEl 只对可视卡现算。
+    const slotFrags = {};
+    function buildFrag(items, val) {
+        const meta = items[val];
+        const fname = baseName(val);
+        const disp = meta?.name || fname;
+        const purl = meta?.preview_url ? `/api/noctyra/preview?url=${encodeURIComponent(meta.preview_url)}` : "";
+        const isVid = meta?.preview_type === "video";
+        const isNsfwLevel = (meta?.nsfw_level || 0) >= nsfwCfg.threshold;
+        const doBlur = nsfwCfg.blur && isNsfwLevel;
+        const wrapCls = "ntp-thumb-wrap" + (doBlur ? " ntp-nsfw" : "");
+        const nsfwTag = isNsfwLevel ? `<span class="ntp-nsfw-tag">18+</span>` : "";
+        const media = !purl
+            ? `<div class="ntp-ph">${PH_ICON}</div>`
+            : (isVid
+                ? `<img class="ntp-thumb" loading="lazy" src="${purl}&size=card" alt="" data-vsrc="${purl}"><span class="ntp-vid-badge">&#9654;</span>`
+                : `<img class="ntp-thumb" loading="lazy" src="${purl}&size=card" alt="">`);   // 视频用首帧静态图（后端抽帧），hover 才播放
+        const thumb = `<div class="${wrapCls}">${media}${nsfwTag}</div>`;
+        const badge = meta?.base_model ? `<span class="ntp-badge">${esc(meta.base_model)}</span>` : "";
+        const fav = meta?.favorite ? `<span class="ntp-fav">★</span>` : "";
+        return `${thumb}<div class="ntp-info"><div class="ntp-name" title="${esc(fname)}">${esc(disp)}</div><div class="ntp-meta">${badge}${fav}</div></div>`;
+    }
+    function fragsFor(i) {
+        if (slotFrags[i]) return slotFrags[i];
+        const items = slotItems[i] || {};
+        const vals = (widgets[i]?.options?.values || []).filter((v) => v != null);
+        const map = new Map();
+        for (const val of vals) if (!map.has(val)) map.set(val, buildFrag(items, val));
+        slotFrags[i] = map;
+        return map;
+    }
+
     function render() {
         vCards.clear();             // 每次重渲染丢弃旧卡引用(旧 DOM 随下面的 innerHTML 替换一并销毁)
         const w = widgets[active];
         if (!w) {
             grid.style.display = "";
             grid.innerHTML = `<div class="ntp-empty">还没有 LoRA 槽<br><span style="font-size:12px">点左侧「＋ 添加 LoRA」加一个，再从这里选模型</span></div>`;
-            vItems = []; vp = null;
+            vItems = []; vp = null; vFrags = null;
             return;
         }
         const values = (w.options?.values || []).filter((v) => v != null);
         const items = slotItems[active] || {};
+        vFrags = fragsFor(active);   // 静态片段（会话内建一次）；render 只做过滤 + 拼接，不再逐卡拼 HTML
         const q = searchEl.value.trim().toLowerCase();
         const baseFilter = selectEl.value;
-        // 过滤 + 预构建每张卡的内部 HTML(字符串很快;只把可视窗口插 DOM)
+        // 每次 render 先 O(槽数) 预建"归一化 basename → 选中它的槽下标"查找表：sameModelValue 等价于
+        // "两值非空且归一化 basename 相等"（精确/归一化相等都蕴含 basename 相等），据此可完全复刻其匹配，
+        // 让每张卡的 selectedHere 从 O(槽数) 降为 O(1)（几千候选下这是键盘/筛选卡顿的大头）。
+        const normBase = (s) => String(s).replace(/\\/g, "/").trim().toLowerCase().split("/").pop();
+        const slotByBase = new Map();
+        widgets.forEach((sw, si) => {
+            if (sw.value == null) return;
+            const k = normBase(sw.value);
+            let arr = slotByBase.get(k);
+            if (!arr) slotByBase.set(k, (arr = []));
+            arr.push(si);   // 按槽序追加 → onSlots 天然升序，与原 forEach 顺序一致
+        });
+        // 过滤：选中态只存 onSlots 小数组，不在此拼角标 HTML；静态片段留给 buildCardEl 查 vFrags。
         vItems = [];
         for (const val of values) {
             const meta = items[val];
-            // 先算这张卡被哪些槽选中(跨所有 widget,sameModelValue 容错比较)→ 角标该槽序号,
-            // 并用它让 sfwOnly 豁免"已选"卡:否则当前选中的 NSFW 模型会被整张滤掉,看起来"没标记"。
-            const onSlots = [];
-            widgets.forEach((sw, si) => { if (sameModelValue(sw.value, val)) onSlots.push(si); });
-            const selectedHere = onSlots.length > 0;
             if (baseFilter && meta?.base_model !== baseFilter) continue;
-            if (nsfwCfg.sfwOnly && meta?.nsfw && !selectedHere) continue;
+            // caveat：:728 的 sfwOnly 豁免作用于"全部 N 项"——当前选中的 NSFW 模型不能被整张滤掉，
+            // 故 selectedHere 必须在此对全部候选算(O(1) 查表)，不能整体推迟到只跑可视卡的 buildCardEl。
+            const onSlots = slotByBase.get(normBase(val)) || [];
+            if (nsfwCfg.sfwOnly && meta?.nsfw && !onSlots.length) continue;
             const fname = baseName(val);
             const disp = meta?.name || fname;
             if (q && !fname.toLowerCase().includes(q) && !disp.toLowerCase().includes(q)) continue;
-            const isCur = onSlots.includes(active);
-            // 单槽也标记当前选中(之前单槽只有微弱光晕、无角标易被忽略);序号即槽位号,单槽就是「1」
-            const sbadges = onSlots.length
-                ? `<div class="ntp-sbadges">${onSlots.map((si) =>
-                    `<span class="ntp-sbadge ntp-sc-${si % 6}${si === active ? " ntp-sbadge-active" : ""}" title="${esc(labels[si])}">${si + 1}</span>`
-                  ).join("")}</div>`
-                : "";
-            const purl = meta?.preview_url ? `/api/noctyra/preview?url=${encodeURIComponent(meta.preview_url)}` : "";
-            const isVid = meta?.preview_type === "video";
-            const isNsfwLevel = (meta?.nsfw_level || 0) >= nsfwCfg.threshold;
-            const doBlur = nsfwCfg.blur && isNsfwLevel;
-            const wrapCls = "ntp-thumb-wrap" + (doBlur ? " ntp-nsfw" : "");
-            const nsfwTag = isNsfwLevel ? `<span class="ntp-nsfw-tag">18+</span>` : "";
-            const media = !purl
-                ? `<div class="ntp-ph">${PH_ICON}</div>`
-                : (isVid
-                    ? `<img class="ntp-thumb" loading="lazy" src="${purl}&size=card" alt="" data-vsrc="${purl}"><span class="ntp-vid-badge">&#9654;</span>`
-                    : `<img class="ntp-thumb" loading="lazy" src="${purl}&size=card" alt="">`);   // 视频也用首帧静态图（后端抽帧），避免大量 <video> 同时解码卡顿；hover 才播放
-            const thumb = `<div class="${wrapCls}">${media}${nsfwTag}</div>`;
-            const badge = meta?.base_model ? `<span class="ntp-badge">${esc(meta.base_model)}</span>` : "";
-            const fav = meta?.favorite ? `<span class="ntp-fav">★</span>` : "";
-            vItems.push({ val, isCur, inner: `${thumb}${sbadges}<div class="ntp-info"><div class="ntp-name" title="${esc(fname)}">${esc(disp)}</div><div class="ntp-meta">${badge}${fav}</div></div>` });
+            vItems.push({ val, onSlots });
         }
         if (!vItems.length) {
             grid.style.display = "";
@@ -778,7 +805,7 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
         const probe = document.createElement("div");
         probe.className = "ntp-card";
         probe.style.cssText = `position:absolute;left:-9999px;top:0;visibility:hidden;box-sizing:border-box;width:${vColW}px`;
-        probe.innerHTML = vItems[0].inner;
+        probe.innerHTML = (vFrags && vFrags.get(vItems[0].val)) || "";   // 片段足够测高（选中角标绝对定位，不影响卡高）
         (vp || grid).appendChild(probe);
         vRowH = (probe.offsetHeight || Math.round(vColW * 1.08 + 60)) + vGap;
         (vp || grid).removeChild(probe);
@@ -787,12 +814,19 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
     function buildCardEl(i) {
         const it = vItems[i];
         const r = Math.floor(i / vCols), c = i % vCols;
+        // 选中态(isCur/glow/角标)只对可视 ~30 张现算；角标绝对定位，拼在静态片段末尾即可（DOM 次序不影响其位置）
+        const isCur = it.onSlots.includes(active);
+        const sbadges = it.onSlots.length
+            ? `<div class="ntp-sbadges">${it.onSlots.map((si) =>
+                `<span class="ntp-sbadge ntp-sc-${si % 6}${si === active ? " ntp-sbadge-active" : ""}" title="${esc(labels[si])}">${si + 1}</span>`
+              ).join("")}</div>`
+            : "";
         const el = document.createElement("div");
-        el.className = "ntp-card" + (it.isCur ? " current" : "");
+        el.className = "ntp-card" + (isCur ? " current" : "");
         el.dataset.val = it.val;
         el.style.cssText = `position:absolute;box-sizing:border-box;left:${c * (vColW + vGap)}px;top:${r * vRowH}px;width:${vColW}px`
-            + (it.isCur ? `;--ntp-glow:${SLOT_COLORS[active % 6]}` : "");
-        el.innerHTML = it.inner;
+            + (isCur ? `;--ntp-glow:${SLOT_COLORS[active % 6]}` : "");
+        el.innerHTML = ((vFrags && vFrags.get(it.val)) || "") + sbadges;
         return el;
     }
 
@@ -822,7 +856,7 @@ async function openPicker(node, widgets, activeIdx = 0, opts = {}) {
 
     function scrollToCurrent() {
         if (!vItems.length || !vp) return;
-        const idx = vItems.findIndex((it) => it.isCur);
+        const idx = vItems.findIndex((it) => it.onSlots.includes(active));
         if (idx < 0) return;
         grid.scrollTop = Math.max(0, Math.floor(idx / vCols) * vRowH - (grid.clientHeight - vRowH) / 2);
         vLastRange = "";
@@ -938,26 +972,13 @@ async function openMediaPicker(node, widget, kind) {
     const countEl = overlay.querySelector(".ntp-count");
     const footEl = overlay.querySelector(".ntp-foot");
 
-    // 视频卡片：只播进入视口的，避免几十个视频同时解码拖垮面板
-    let vidObserver = null;
-    const observeVideos = () => {
-        if (!isVid) return;
-        if (!vidObserver) {
-            vidObserver = new IntersectionObserver((ents) => {
-                for (const en of ents) {
-                    if (en.isIntersecting) en.target.play?.().catch(() => {});
-                    else en.target.pause?.();
-                }
-            }, { root: grid, rootMargin: "150px" });
-        }
-        grid.querySelectorAll("video.ntp-thumb").forEach((v) => vidObserver.observe(v));
-    };
+    // 视频卡片默认只渲染静态首帧 <img>（后端 size=card 出封面），hover 才动态建 <video>，
+    // 移出即移除 —— 无限滚动追加再多卡也不会有一堆 <video> 同时解码拖垮面板（不再需要 IntersectionObserver）。
 
     const close = () => {
         _activeSfwApply = null;
         overlay.remove();
         document.removeEventListener("keydown", onKey);
-        if (vidObserver) vidObserver.disconnect();
     };
     const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
     document.addEventListener("keydown", onKey);
@@ -989,7 +1010,7 @@ async function openMediaPicker(node, widget, kind) {
         const fav = img.favorite ? `<span class="ntp-fav">★</span>` : "";
         const wf = img.has_workflow ? `<span class="ntp-badge">WF</span>` : "";
         const media = isVid
-            ? `<video class="ntp-thumb" src="${src}" muted loop playsinline preload="metadata" disablepictureinpicture disableremoteplayback></video>`
+            ? `<img class="ntp-thumb" loading="lazy" src="${src}?size=card" alt="" data-vsrc="${src}"><span class="ntp-vid-badge">&#9654;</span>`
             : `<img class="ntp-thumb" loading="lazy" src="${src}?size=card" alt="">`;
         return `<div class="ntp-card" data-id="${img.id}">
             <div class="${wrapCls}">${media}${nsfwTag}</div>
@@ -1027,6 +1048,29 @@ async function openMediaPicker(node, widget, kind) {
         if (card) pick(parseInt(card.dataset.id), card);
     });
 
+    // 悬停视频卡：在静态封面上动态建 <video> 播原片，移出即移除（同时只有 hover 的一个在解码）
+    grid.addEventListener("mouseover", (e) => {
+        if (!isVid) return;
+        const card = e.target.closest(".ntp-card");
+        if (!card) return;
+        const img = card.querySelector("img.ntp-thumb[data-vsrc]");
+        if (!img || card.querySelector("video.ntp-thumb")) return;
+        const v = document.createElement("video");
+        v.src = img.dataset.vsrc;
+        v.className = "ntp-thumb";
+        v.muted = true; v.loop = true; v.playsInline = true;
+        v.setAttribute("disablepictureinpicture", "");
+        v.setAttribute("disableremoteplayback", "");
+        img.parentElement.appendChild(v);
+        v.play().catch(() => {});
+    });
+    grid.addEventListener("mouseout", (e) => {
+        const card = e.target.closest(".ntp-card");
+        if (!card || card.contains(e.relatedTarget)) return;   // 卡片内部移动不算移出
+        const v = card.querySelector("video.ntp-thumb");
+        if (v) v.remove();
+    });
+
     async function loadPage(first) {
         if (loading) return;
         loading = true;
@@ -1047,7 +1091,6 @@ async function openMediaPicker(node, widget, kind) {
                 return;
             }
             grid.insertAdjacentHTML("beforeend", items.map(cardHtml).join(""));
-            observeVideos();
         } catch (e) {
             if (myGen === gen && first) grid.innerHTML = `<div class="ntp-empty">网络错误</div>`;
         } finally {
@@ -1063,7 +1106,6 @@ async function openMediaPicker(node, widget, kind) {
 
     const reset = () => {
         gen++; page = 1; totalPages = 1; seen.clear();
-        if (vidObserver) vidObserver.disconnect();
         footEl.classList.remove("err");
         grid.innerHTML = `<div class="ntp-empty"><div class="ntp-spinner"></div>正在加载图库…</div>`;
         loadPage(true);
@@ -1364,21 +1406,16 @@ function setupFab() {
         });
         openPicker(target.node, target.widgets, initIdx >= 0 ? initIdx : 0);   // 单槽/多槽统一；多槽时面板内出侧边栏
     };
-    let clickTimer = null;
-    fab.addEventListener("click", (e) => {
+    // 单击立即打开选择器（不再为"双击看触发词"预留 240ms 延迟，库内模型点开也不再卡顿）。
+    fab.addEventListener("click", () => {
         if (!getTarget()) return;
-        if (e.detail > 1) return;  // 双击的第二下不再排程，交给 dblclick 看触发词
-        if (fab.classList.contains("has-match")) {
-            // 库内模型：等一拍让双击有机会取消（双击 = 看触发词）
-            clearTimeout(clickTimer);
-            clickTimer = setTimeout(openFlow, 240);
-        } else {
-            openFlow();
-        }
+        openFlow();
     });
-    fab.addEventListener("dblclick", () => {
-        clearTimeout(clickTimer);
-        if (fab.classList.contains("has-match")) toggleTriggerPop(fab);
+    // 看触发词改用右键（contextmenu）：与单击各走各的，天然不抢时序，无需乐观打开/撤销那套。
+    fab.addEventListener("contextmenu", (e) => {
+        if (!fab.classList.contains("has-match")) return;   // 非库内模型：放行浏览器默认右键
+        e.preventDefault();
+        toggleTriggerPop(fab);
     });
 
     // 轮询选中状态：key 含 widget 值，模型被改也能重查库内状态
@@ -1415,7 +1452,7 @@ function setupFab() {
             fab.classList.add("active");
             fab.classList.remove("img-mode");
             const labels = [...new Set(target.widgets.map((w) => WIDGET_LABELS[w.name]))];
-            fab.title = `浏览${labels.join(" / ")}（库内模型双击看触发词）`;
+            fab.title = `浏览${labels.join(" / ")}（库内模型右键看触发词）`;
             tag.textContent = labels.length === 1 ? labels[0] : labels.length;
             clearTimeout(checkTimer);
             checkTimer = setTimeout(() => checkMatched(target.widgets, fab, key, () => lastKey), 180);
@@ -1431,7 +1468,7 @@ function setupFab() {
 app.registerExtension({
     name: "Noctyra.ModelPicker",
     setup() {
-        console.log("%c[Noctyra] 画布选择器 v2.34 已加载（模型 + 图库选图/选视频 / 可拖动 / 双击看触发词 / 右键卡片看详情·复制触发词）", "color:#2d7ff9;font-weight:700");
+        console.log("%c[Noctyra] 画布选择器 v2.34 已加载（模型 + 图库选图/选视频 / 可拖动 / 右键看触发词 / 右键卡片看详情·复制触发词）", "color:#2d7ff9;font-weight:700");
         // 先取设置：决定是否创建悬浮按钮 + 预热 NSFW 配置（设置里关掉则不显示按钮）
         refreshNsfwCfg().then(() => { if (pickerEnabled) setupFab(); });
     },

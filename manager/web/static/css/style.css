@@ -968,6 +968,7 @@ select.filter-select:hover {
 .card-preview.nsfw-blur video {
     filter: blur(20px);
     transition: filter 0.35s;
+    will-change: filter;   /* 栅格化一次缓存，滚动时不逐帧重算大半径高斯（虚拟滚动已限界可视卡数） */
 }
 
 .card-preview.nsfw-blur:hover img,

@@ -472,7 +472,9 @@ function galleryCardHtml(img) {
     const src = `/api/noctyra/workflow/image/${img.id}`;
     // 卡片图片用 480px WebP 缩略图（视频不缩略，详情/放大仍用原图）
     const mediaTag = isVideo
-        ? `<video src="${src}" muted loop playsinline preload="metadata"
+        // poster 用 card 尺寸小 WebP 封面：离屏只付一张封面图、消黑框；preload="none" 不预下载视频，
+        // 仍是 <video>（保留 IntersectionObserver 视口内自动预览），进入视口才 play() 触发解码。
+        ? `<video src="${src}" poster="${src}?size=card" muted loop playsinline preload="none"
                   disablepictureinpicture disableremoteplayback></video>`
         : `<img src="${src}?size=card" alt="${escapeAttr(name)}" loading="lazy" decoding="async">`;
     // NSFW 判定：用户手动标 OR CivitAI level 达阈值
@@ -848,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const deleteBtn = e.target.closest('.wf-gallery-card-delete');
         if (deleteBtn) {
             e.stopPropagation();
-            if (!await showConfirm({ title: '删除图片', danger: true, okText: '删除', message: '确定删除这张图片？' })) return;
+            if (!await showConfirm({ title: '从图库删除', danger: true, okText: '删除', message: '从图库删除这张图片？\n你本地文件夹里的原图不会被删除，只移除图库索引。' })) return;
             const id = deleteBtn.dataset.id;
             try {
                 const res = await apiGalleryDelete(id);

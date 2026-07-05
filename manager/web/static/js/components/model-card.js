@@ -132,10 +132,13 @@ const MODEL_TYPE_LABELS = {
     'Detection': 'Det',
 };
 
+// 模块加载时预生成小写 key 表，避免每张卡都 Object.entries + 反复 toLowerCase
+const _BASE_MODEL_COLOR_ENTRIES = Object.entries(BASE_MODEL_COLORS).map(([k, c]) => [k.toLowerCase(), c]);
 function getBaseModelColor(bm) {
     if (!bm) return '#666';
-    for (const [key, color] of Object.entries(BASE_MODEL_COLORS)) {
-        if (bm.toLowerCase().includes(key.toLowerCase())) return color;
+    const lower = bm.toLowerCase();
+    for (const [key, color] of _BASE_MODEL_COLOR_ENTRIES) {
+        if (lower.includes(key)) return color;
     }
     return '#666';
 }
@@ -164,11 +167,10 @@ export function createModelCard(model) {
     const blurNsfw = s.blur_nsfw !== false && level >= threshold;
 
     // 多图指示器
-    const piu = model.preview_image_urls || [];
-    const mediaCount = piu.length;
+    const mediaCount = model.preview_media_count || 0;
     let multiImgBadge = '';
     if (mediaCount > 1) {
-        const vidCount = piu.filter(p => p.type === 'video').length;
+        const vidCount = model.preview_video_count || 0;
         const imgCount = mediaCount - vidCount;
         const parts = [];
         if (imgCount > 0) parts.push(`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg> ${imgCount}`);
@@ -223,23 +225,31 @@ export function createModelCard(model) {
     card.addEventListener('dragend', () => card.classList.remove('dragging'));
 
     if (isVideo && s.autoplay_video_on_hover !== false) {
+        // hover-intent 去抖：停留 ~160ms 才建 <video> 拉原片，避免鼠标快速扫过一排视频卡
+        // 就批量创建 video + 下载大文件 + 解码。离开时清定时器并显式中断在飞请求。
+        let hoverTimer = null;
         card.addEventListener('mouseenter', () => {
-            if (card.querySelector('video')) return;
-            const img = card.querySelector('img[data-video-src]');
-            const vsrc = img && img.dataset.videoSrc;
-            if (!vsrc) return;
-            const v = document.createElement('video');
-            v.src = vsrc;
-            v.muted = true; v.loop = true; v.playsInline = true;
-            v.className = 'card-hover-video';
-            v.setAttribute('disablepictureinpicture', '');
-            v.setAttribute('disableremoteplayback', '');
-            (img.parentElement || card).appendChild(v);
-            v.play().catch(() => {});
+            if (hoverTimer || card.querySelector('video')) return;
+            hoverTimer = setTimeout(() => {
+                hoverTimer = null;
+                if (card.querySelector('video')) return;
+                const img = card.querySelector('img[data-video-src]');
+                const vsrc = img && img.dataset.videoSrc;
+                if (!vsrc) return;
+                const v = document.createElement('video');
+                v.src = vsrc;
+                v.muted = true; v.loop = true; v.playsInline = true;
+                v.className = 'card-hover-video';
+                v.setAttribute('disablepictureinpicture', '');
+                v.setAttribute('disableremoteplayback', '');
+                (img.parentElement || card).appendChild(v);
+                v.play().catch(() => {});
+            }, 160);
         });
         card.addEventListener('mouseleave', () => {
+            if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
             const v = card.querySelector('video.card-hover-video');
-            if (v) v.remove();
+            if (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (_) { /* 忽略 */ } v.remove(); }
         });
     }
 

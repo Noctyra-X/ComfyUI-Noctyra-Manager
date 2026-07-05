@@ -40,12 +40,15 @@ def _collect_preview_urls(model: dict) -> list:
     pu = model.get("preview_url")
     if pu and not pu.startswith("sidecar://"):
         urls.append(pu)
-    for img in model.get("preview_images") or []:
+    # 列表路径 _row_to_dict 会把 preview_images pop 掉、只留 preview_image_urls，
+    # 故回退读后者，否则完整度只按封面算 → 徽章恒为 1/1。
+    for img in model.get("preview_images") or model.get("preview_image_urls") or []:
         if isinstance(img, dict):
             u = img.get("url")
             if u and not u.startswith("sidecar://"):
                 urls.append(u)
-    return urls
+    # 去重：封面(preview_url)通常也是 gallery[0]，check_urls_status 不去重会把它多算一次
+    return list(dict.fromkeys(urls))
 
 
 def _compute_preview_status(cache, model: dict, cached_keys=None) -> dict:
@@ -91,24 +94,32 @@ async def api_models_list(request):
         if hit and (now - hit[0]) < _PREVIEW_FILTER_TTL:
             filtered = hit[1]
         else:
-            all_models, _all_total = mgr.get_models_paginated(
-                page=1, page_size=100000, sort_by=sort_by, sort_dir=sort_dir, **filters
-            )
-            cached_keys = cache.cached_keys_snapshot()   # 一次 listdir，全量过滤共用
-            filtered = []
-            for m in all_models:
-                status = _compute_preview_status(cache, m, cached_keys)
-                m["preview_status"] = status
-                if status["total"] == 0:
-                    continue  # 未匹配的模型没有在线预览，不进任何预览筛选结果
-                # missing 排除"纯死链"(缺失全是 404/410)→ 只算真正还能下载的,让 failed
-                # 与 missing 不在纯死链模型上重叠(纯死链只进 failed)
-                if preview_filter == "missing" and (status["missing"] - status.get("dead", 0)) > 0:
-                    filtered.append(m)
-                elif preview_filter == "complete" and status["complete"]:
-                    filtered.append(m)
-                elif preview_filter == "failed" and status.get("dead", 0) > 0:
-                    filtered.append(m)
+            # 全量扫描(取数 + 逐模型算预览状态)是重同步活，整段卸载到线程池，别独占事件循环
+            loop = asyncio.get_running_loop()
+
+            def _build_filtered():
+                _all, _ = mgr.get_models_paginated(
+                    page=1, page_size=100000, sort_by=sort_by, sort_dir=sort_dir, **filters
+                )
+                _keys = cache.cached_keys_snapshot()   # 一次 listdir，全量过滤共用
+                _out = []
+                for _m in _all:
+                    _st = _compute_preview_status(cache, _m, _keys)
+                    _m["preview_status"] = _st
+                    _m.pop("preview_image_urls", None)   # 状态已算完，不发大数组给前端
+                    if _st["total"] == 0:
+                        continue  # 未匹配的模型没有在线预览，不进任何预览筛选结果
+                    # missing 排除"纯死链"(缺失全是 404/410)→ 只算真正还能下载的,让 failed
+                    # 与 missing 不在纯死链模型上重叠(纯死链只进 failed)
+                    if preview_filter == "missing" and (_st["missing"] - _st.get("dead", 0)) > 0:
+                        _out.append(_m)
+                    elif preview_filter == "complete" and _st["complete"]:
+                        _out.append(_m)
+                    elif preview_filter == "failed" and _st.get("dead", 0) > 0:
+                        _out.append(_m)
+                return _out
+
+            filtered = await loop.run_in_executor(None, _build_filtered)
             _preview_filter_cache[sig] = (now, filtered)
             if len(_preview_filter_cache) > 32:   # 防无界增长,丢最旧
                 oldest = min(_preview_filter_cache, key=lambda k: _preview_filter_cache[k][0])
@@ -123,13 +134,22 @@ async def api_models_list(request):
             "page": page, "page_size": page_size, "total_pages": total_pages,
         })
 
-    models, total = mgr.get_models_paginated(
-        page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir, **filters
-    )
-    # 当前页附 preview_status，方便前端显示徽章。一次 listdir 建快照，避免每 URL 多次磁盘 stat
-    cached_keys = cache.cached_keys_snapshot()
-    for m in models:
-        m["preview_status"] = _compute_preview_status(cache, m, cached_keys)
+    # 取数 + 建缓存快照 + 逐模型算 preview_status 全是同步 DB/磁盘活，整段卸载到线程池，
+    # 别独占 ComfyUI 共享事件循环（否则取数期间出图进度、其它接口一起顿）。DB 层是
+    # threading.Lock + 每调用独立连接，线程安全；用默认大池(None)而非扫描池，避免扫描时被挤。
+    loop = asyncio.get_running_loop()
+
+    def _build_page():
+        _models, _total = mgr.get_models_paginated(
+            page=page, page_size=page_size, sort_by=sort_by, sort_dir=sort_dir, **filters
+        )
+        _keys = cache.cached_keys_snapshot()
+        for _m in _models:
+            _m["preview_status"] = _compute_preview_status(cache, _m, _keys)
+            _m.pop("preview_image_urls", None)   # 状态已算完，前端只需 preview_media_count/video_count 计数
+        return _models, _total
+
+    models, total = await loop.run_in_executor(None, _build_page)
     total_pages = math.ceil(total / page_size) if page_size > 0 else 1
 
     return web.json_response({

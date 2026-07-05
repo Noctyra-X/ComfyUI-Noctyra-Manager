@@ -179,9 +179,11 @@ class _WorkflowMixin:
                 # 旧记录 media_type 可能为 NULL/空，一律按图片
                 where += " AND (media_type IS NULL OR media_type != 'video')"
             if search:
-                where += " AND (file_name LIKE ? OR custom_name LIKE ? OR meta LIKE ?)"
+                # 搜可读字段：文件名 / 自定义名 / 备注 / 可读参数串（含 prompt）。
+                # 不再对整个 meta JSON 做 LIKE，避免全表扫并误命中 JSON key/hash。
+                where += " AND (file_name LIKE ? OR custom_name LIKE ? OR notes LIKE ? OR parameters_text LIKE ?)"
                 like = f"%{search}%"
-                params += [like, like, like]
+                params += [like, like, like, like]
             if tag:
                 # tags 字段是 JSON 数组文本，用 LIKE 模糊包住引号确保精确匹配标签名
                 where += " AND tags LIKE ?"

@@ -186,12 +186,19 @@ async def api_extension_save_image(request):
     if not image_url:
         return web.json_response({"success": False, "error": "CivitAI 未返回图片 URL"})
 
+    # nsfwLevel 是字符串标签（"None"/"Soft"/"Mature"/"X"），browsingLevel 才是数值（1/2/4/8/16）。
+    # 与 fetch 路径统一：优先 browsingLevel，回退把字符串标签映射成数字 —— 否则存进去的是字符串，
+    # 前端/后端的数值阈值比较全部失效，这批图永远不打码（NSFW 判断"不准"的主因）。
+    nsfw_level = info.get("browsingLevel")
+    if not isinstance(nsfw_level, int):
+        nsfw_level = _nsfw_label_to_int(info.get("nsfwLevel"))
+
     image_info = {
         "id": info.get("id"),
         "url": image_url,
         "width": info.get("width"),
         "height": info.get("height"),
-        "nsfw_level": info.get("nsfwLevel", 0),
+        "nsfw_level": nsfw_level,
         "meta": meta,
         "resources": resources,
         "has_workflow": bool(meta.get("comfy") or meta.get("comfy_workflow") or meta.get("workflow")),

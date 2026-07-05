@@ -201,6 +201,9 @@ class ModelManager(_OrganizeMixin):
 
     async def _do_scan(self, progress_callback: Callable = None, force: bool = False) -> int:
         scan_start = time.time()
+        # 同步 DB 写各自卸载到线程池，避免大批量入库/清理阻塞事件循环卡住 UI。
+        # DB 层用 threading.Lock + 每调用独立连接，线程安全。
+        loop = asyncio.get_running_loop()
         # 首次扫描时后台刷新官方 base model 列表（不阻塞扫描）
         if not getattr(self, "_bm_refreshed", False):
             self._bm_refreshed = True
@@ -231,7 +234,7 @@ class ModelManager(_OrganizeMixin):
         # 导致早期下载时 basename(save_dir) bug 残留的 folder="Anima"/"Illustrious"
         # 等非规范值永远得不到覆盖；这里按 file_path + model_root 反推重写）
         try:
-            self.db.repair_folders(list(self.config.model_roots))
+            await loop.run_in_executor(None, self.db.repair_folders, list(self.config.model_roots))
         except Exception as e:
             logger.warning("[Noctyra-MM] folder 修复失败: %s", e)
 
@@ -273,7 +276,7 @@ class ModelManager(_OrganizeMixin):
 
         # 只有当所有根目录扫描都成功时才清理缺失记录，避免因为临时 IO 错误误删好数据
         if not scan_failed:
-            self.db.remove_missing({m.file_path for m in all_models})
+            await loop.run_in_executor(None, self.db.remove_missing, {m.file_path for m in all_models})
         else:
             logger.warning("[Noctyra-MM] 跳过 remove_missing（扫描失败保护）")
 
@@ -319,9 +322,9 @@ class ModelManager(_OrganizeMixin):
                     need_hash.append(model)
 
             if batch:
-                self.db.upsert_models_batch(batch)
+                await loop.run_in_executor(None, self.db.upsert_models_batch, batch)
             if corrupt_flags:
-                self.db.set_corrupt_flags(corrupt_flags)   # 入库后再写损坏标志（不动复杂 upsert）
+                await loop.run_in_executor(None, self.db.set_corrupt_flags, corrupt_flags)   # 入库后再写损坏标志（不动复杂 upsert）
             if skipped_incremental:
                 logger.info("[Noctyra-MM] 增量扫描节省 %d 个文件的入库（未变）", skipped_incremental)
         except Exception:

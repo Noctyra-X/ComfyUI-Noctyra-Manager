@@ -28,6 +28,31 @@
     --tint-strong: rgba(255, 255, 255, 0.25);
 }
 
+/* 站内确认弹窗（替代原生 confirm） */
+.popup-confirm-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.popup-confirm {
+    background: var(--bg-elev); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); padding: 16px; width: 100%; max-width: 260px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+.popup-confirm-msg {
+    color: var(--text); font-size: 13px; line-height: 1.5; margin-bottom: 14px; white-space: pre-wrap;
+}
+.popup-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.pc-btn {
+    padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+    background: var(--bg-soft); color: var(--text); font-size: 12px; cursor: pointer;
+}
+.pc-btn:hover { background: var(--tint-hover); }
+.pc-btn.pc-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.pc-btn.pc-primary:hover { background: var(--accent-hover); }
+.pc-btn.pc-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.pc-btn.pc-danger:hover { filter: brightness(1.08); }
+
 /* 浅色主题：跟随系统 prefers-color-scheme，无需手动开关 */
 @media (prefers-color-scheme: light) {
     :root {

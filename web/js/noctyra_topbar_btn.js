@@ -23,12 +23,12 @@ const MAX_ATTACH_ATTEMPTS = 120;
 
 const openManager = (event) => {
     const url = `${window.location.origin}${MANAGER_PATH}`;
-    // actionBarButtons 的 action 回调不一定传 event，安全检查
-    if (event && event.shiftKey) {
-        window.open(url, "_blank", "width=1200,height=800,resizable=yes,scrollbars=yes");
-    } else {
-        window.open(url, "_blank");
-    }
+    // 命名窗口 "noctyra-manager"：再次点击复用同一个标签/窗口并聚焦，
+    // 不再每次点开攒一个重复标签。actionBarButtons 的 action 回调不一定传 event，安全检查。
+    const win = (event && event.shiftKey)
+        ? window.open(url, "noctyra-manager", "width=1200,height=800,resizable=yes,scrollbars=yes")
+        : window.open(url, "noctyra-manager");
+    try { win && win.focus(); } catch (_) { /* 跨源/被拦截时忽略 */ }
 };
 
 // 顶部菜单按钮图标：用网站新图标（白底动漫女孩）；?v 防旧缓存

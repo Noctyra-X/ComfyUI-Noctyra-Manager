@@ -212,6 +212,13 @@ class ModelDatabase(_WorkflowMixin):
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_models_civitai_model_id ON models(civitai_model_id)")
                 # source_root 是迁移新加的列，索引必须在 ALTER 之后建，否则旧库建库即崩
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_wf_images_root ON workflow_images(source_root)")
+                # civitai_image_id / fingerprint 是迁移新加的列；历史 schema 的旧库可能仍无该列，
+                # 建索引前先按 PRAGMA 探测列是否存在，避免 no such column 建库即崩（用于去重/查配方免全表扫）
+                _wf_cols = {r[1] for r in conn.execute("PRAGMA table_info(workflow_images)")}
+                if "civitai_image_id" in _wf_cols:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_wf_images_civitai_id ON workflow_images(civitai_image_id)")
+                if "fingerprint" in _wf_cols:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_wf_images_fingerprint ON workflow_images(fingerprint)")
                 conn.commit()
 
                 # FTS5 全文索引：覆盖 file_name / model_name / model_description /
@@ -1190,7 +1197,10 @@ class ModelDatabase(_WorkflowMixin):
                 # 用 SELECT * 会把它们整页(80 行)拉进内存还白解析一次 hf_raw → 翻页变卡。
                 if getattr(self, "_list_cols_sql", None) is None:
                     _all = [r[1] for r in conn.execute("PRAGMA table_info(models)")]
-                    _skip = {"metadata_raw", "civitai_raw", "hf_raw"}
+                    # model_description/hf_description(合计占列表载荷 ~45%) + creator_avatar
+                    # 仅详情弹窗用（走 fetchModelDetail 全量重取），列表/卡片不读 → 一并裁掉减小载荷
+                    _skip = {"metadata_raw", "civitai_raw", "hf_raw",
+                             "model_description", "hf_description", "creator_avatar"}
                     self._list_cols_sql = ", ".join(c for c in _all if c not in _skip)
                 cols = self._list_cols_sql
 
@@ -2189,10 +2199,16 @@ class ModelDatabase(_WorkflowMixin):
                 )
             except (TypeError, ValueError):
                 d["max_nsfw_level"] = 0
+            # 多图徽章计数（卡片用）：替代把整个 preview_image_urls 数组发给前端
+            _with_url = [p for p in d["preview_images"] if p.get("url")]
+            d["preview_media_count"] = len(_with_url)
+            d["preview_video_count"] = sum(1 for p in _with_url if p.get("type") == "video")
         else:
             d["preview_type"] = "image"
             d["preview_nsfw_level"] = 0
             d["max_nsfw_level"] = 0
+            d["preview_media_count"] = 0
+            d["preview_video_count"] = 0
         # 列表页不需要完整图片数据，只保留 URL + type + nsfw_level
         if not include_images and d["preview_images"]:
             d["preview_image_urls"] = [

@@ -27,6 +27,10 @@ import { app } from "../../scripts/app.js";
 const PENDING_KEY = "noctyra_pending_workflow";
 const PENDING_TTL = 60000;
 
+// 一次性守卫：启动时只在"首个 configureGraph（= ComfyUI 恢复上次工作流）之后"捞一次暂存，
+// 避免固定 setTimeout 猜恢复完成。afterConfigureGraph / 长兜底定时器都经它，防重入。
+let _consumedInitial = false;
+
 function loadWorkflowToCanvas(wf, name) {
     if (!wf) return;
     try {
@@ -53,8 +57,20 @@ function consumePending() {
     } catch (_) { /* 忽略 */ }
 }
 
+// 首个 configureGraph 后捞暂存：ComfyUI 恢复上次工作流的最终 load 也会触发此钩子，
+// 它确定性地发生在恢复完成之后 → 我们的 loadGraphData 稳稳后到、覆盖恢复的图，不再靠猜时延。
+// 一次性守卫保证只在启动那一次生效；之后用户自己开工作流的 configureGraph 不再重复捞。
+function consumeInitialOnce() {
+    if (_consumedInitial) return;
+    _consumedInitial = true;
+    consumePending();
+}
+
 app.registerExtension({
     name: "Noctyra.CanvasReceiver",
+    afterConfigureGraph() {
+        consumeInitialOnce();
+    },
     setup() {
         console.log("%c[Noctyra] 画布接收器已加载（图库可发送工作流到画布）", "color:#2d7ff9;font-weight:700");
 
@@ -70,11 +86,12 @@ app.registerExtension({
             };
         } catch (_) { /* 浏览器不支持 BroadcastChannel 时忽略，靠 localStorage 兜底 */ }
 
-        // 2) 兜底：画布刚打开/刷新时捞一下暂存的（图库先发的情况）。
-        //    延后一拍，等 ComfyUI 自身恢复上次工作流之后再覆盖，避免竞态。
-        setTimeout(consumePending, 600);
+        // 2) 长兜底：万一 afterConfigureGraph 没触发（旧版 ComfyUI / 异常），仍在较晚时刻捞一次。
+        //    留足够长（8s），确保正常情况下钩子先到、守卫已置位，此定时器只在钩子缺席时兜底。
+        setTimeout(consumeInitialOnce, 8000);
 
-        // 标签页重新可见时也捞一次（图库在另一个标签发了，用户切回画布）
+        // 标签页重新可见时也捞一次（图库在另一个标签发了，用户切回画布）。
+        // 走独立路径（不经一次性守卫），因为这是启动之后新发来的暂存。
         document.addEventListener("visibilitychange", () => {
             if (!document.hidden) consumePending();
         });

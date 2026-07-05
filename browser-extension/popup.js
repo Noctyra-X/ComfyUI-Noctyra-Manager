@@ -25,6 +25,8 @@ const clearBtn = document.getElementById('btn-clear');
 
 let currentFilter = 'active';
 let pollTimer = null;
+let _pollInterval = 0;   // 当前轮询间隔（0=未启动）
+let _lastListSig = '';   // 列表内容签名：只有变了才重建 DOM，避免每秒整表 innerHTML
 
 // `send()` 由 noctyra-send.js 提供（popup.html 先加载）
 
@@ -37,28 +39,16 @@ async function loadConfig() {
 function isAllowedHost(host) {
     if (!host) return false;
     host = host.trim().toLowerCase();
-    // localhost 及环回地址
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
-    // IPv4 私网地址（RFC1918）：10/8, 172.16/12, 192.168/16
-    const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (m) {
-        const oct = m.slice(1).map(Number);
-        if (oct.some(n => n > 255)) return false;   // 非法 IP 段（如 10.999.x.x）直接拒
-        const [a, b] = oct;
-        if (a === 10) return true;
-        if (a === 172 && b >= 16 && b <= 31) return true;
-        if (a === 192 && b === 168) return true;
-        return false;
-    }
-    // 允许局域网 mDNS（.local）
-    if (host.endsWith('.local')) return true;
-    return false;
+    // 只允许本机：manifest host_permissions 也只授了 127.0.0.1/localhost。私网/.local 即便
+    // 校验通过，浏览器也会因未授权而静默拦截 fetch → 误报"未连接"。如需访问局域网另一台
+    // 机器的 ComfyUI，得改用 optional_host_permissions 在用户手势里动态申请权限。
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
 }
 
 async function saveConfig() {
     const host = hostEl.value.trim() || '127.0.0.1';
     if (!isAllowedHost(host)) {
-        showConfigError('仅允许 localhost / 127.0.0.1 / 私网 IP / *.local');
+        showConfigError('仅支持本机：localhost / 127.0.0.1');
         throw new Error('host rejected');
     }
     const port = parseInt(portEl.value, 10) || 8188;
@@ -140,11 +130,20 @@ function renderList(downloads) {
 
     const filtered = downloads.filter(d => statusBucket(d.status) === currentFilter);
     if (filtered.length === 0) {
-        listEl.innerHTML = '<div class="empty">无任务</div>';
+        if (_lastListSig !== 'empty') { listEl.innerHTML = '<div class="empty">无任务</div>'; _lastListSig = 'empty'; }
         return;
     }
 
+    // 内容签名：id/状态/进度/大小/速度都没变就整段跳过重建 —— 避免每秒 innerHTML 重建
+    // 导致长列表滚动被弹回顶端、缩略图重新 decode 闪烁、点按钮时元素被换掉点空。
+    const sig = filtered.map(d =>
+        `${d.id}:${d.status}:${(d.progress || 0).toFixed(1)}:${d.downloaded || 0}:${d.speed || 0}`
+    ).join('|');
+    if (sig === _lastListSig) return;
+    _lastListSig = sig;
+    const prevScroll = listEl.scrollTop;
     listEl.innerHTML = filtered.map(d => renderItem(d)).join('');
+    listEl.scrollTop = prevScroll;   // 重建后恢复滚动位置
 }
 
 // 事件委托：在父容器监听一次，避免每次 renderList 给新节点重复绑定
@@ -250,23 +249,39 @@ function escapeHtml(s) {
 async function refresh() {
     const res = await send('getDownloads');
     if (res?.success) {
-        renderList(res.downloads || []);
+        const dls = res.downloads || [];
+        renderList(dls);
+        // 有进行中任务才 1s 快刷；否则 4s 慢刷（仍能发现新任务/重连，但不再每秒轮询+重建）
+        schedulePoll(dls.some(d => statusBucket(d.status) === 'active'));
     } else {
         // 后端不可达：明确告知"未连接"，而不是误导的"无任务"
         ['active', 'failed', 'complete'].forEach(k => {
             document.getElementById('count-' + k).textContent = '0';
         });
-        listEl.innerHTML = `
+        if (_lastListSig !== 'disconnected') {
+            listEl.innerHTML = `
             <div class="empty empty-disconnected">
                 <div class="empty-title">未连接到 Noctyra</div>
                 <div class="empty-sub">确认 ComfyUI 已运行，并在「设置」里填对地址 / 端口</div>
                 <button class="empty-act" id="empty-goto-settings">前往设置</button>
             </div>`;
-        const goto = document.getElementById('empty-goto-settings');
-        if (goto) goto.addEventListener('click', () => {
-            document.querySelector('.tab[data-tab="settings"]')?.click();
-        });
+            _lastListSig = 'disconnected';
+            const goto = document.getElementById('empty-goto-settings');
+            if (goto) goto.addEventListener('click', () => {
+                document.querySelector('.tab[data-tab="settings"]')?.click();
+            });
+        }
+        schedulePoll(false);   // 断连时慢刷重连（静态 UI，无重建 churn）
     }
+}
+
+// 按是否有进行中任务动态调整轮询间隔：1s（活跃）/ 4s（空闲）
+function schedulePoll(hasActive) {
+    const want = hasActive ? 1000 : 4000;
+    if (pollTimer && _pollInterval === want) return;
+    if (pollTimer) clearInterval(pollTimer);
+    _pollInterval = want;
+    pollTimer = setInterval(refresh, want);
 }
 
 // ---- Tab switching ----
@@ -300,11 +315,43 @@ document.querySelectorAll('.sub-tab').forEach(t => {
     });
 });
 
+// 站内确认弹窗（替代浏览器原生 confirm，风格对齐 popup 主题）
+function popupConfirm({ message = '', okText = '确定', cancelText = '取消', danger = false } = {}) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'popup-confirm-overlay';
+        overlay.innerHTML = `
+            <div class="popup-confirm" role="dialog" aria-modal="true">
+                <p class="popup-confirm-msg"></p>
+                <div class="popup-confirm-actions">
+                    <button class="pc-btn" data-act="cancel"></button>
+                    <button class="pc-btn ${danger ? 'pc-danger' : 'pc-primary'}" data-act="ok"></button>
+                </div>
+            </div>`;
+        overlay.querySelector('.popup-confirm-msg').textContent = message;   // textContent 防注入
+        overlay.querySelector('[data-act="cancel"]').textContent = cancelText;
+        overlay.querySelector('[data-act="ok"]').textContent = okText;
+        document.body.appendChild(overlay);
+        const done = (v) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+        const onKey = (e) => {
+            if (e.key === 'Escape') done(false);
+            else if (e.key === 'Enter') done(true);
+        };
+        document.addEventListener('keydown', onKey);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) { done(false); return; }   // 点遮罩 = 取消
+            const act = e.target.closest('[data-act]');
+            if (act) done(act.dataset.act === 'ok');
+        });
+        overlay.querySelector('[data-act="ok"]').focus();
+    });
+}
+
 clearBtn.addEventListener('click', async () => {
     // 按当前 tab 决定清哪部分：进行中不可清；失败/完成只清对应一组
     if (currentFilter === 'active') return;  // disabled 状态下不应触发，保险拦一下
     const label = currentFilter === 'failed' ? '失败/取消' : '已完成';
-    if (!confirm(`清空"${label}"列表的下载记录？`)) return;
+    if (!await popupConfirm({ message: `清空"${label}"列表的下载记录？`, okText: '清空', danger: true })) return;
     await send('clearDownloads', { status: currentFilter });
     await refresh();
 });
@@ -334,8 +381,7 @@ openBtn.addEventListener('click', () => {
     updateClearBtnState();  // 初始 currentFilter='active' → 清空按钮 disabled
     await loadConfig();
     await ping();
-    await refresh();
-    pollTimer = setInterval(refresh, 1000);
+    await refresh();   // refresh() 内按是否有活跃任务启动动态轮询
 })();
 
 window.addEventListener('unload', () => {

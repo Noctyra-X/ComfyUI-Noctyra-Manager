@@ -24,8 +24,10 @@ HuggingFace 不支持通过 SHA256 反查模型，采用多种策略匹配：
 """
 
 import os
+import asyncio
 import logging
 import aiohttp
+from urllib.parse import urlparse
 from typing import Optional, Dict, List, Tuple
 
 logger = logging.getLogger("noctyra.huggingface")
@@ -226,12 +228,28 @@ class HuggingFaceClient:
             if not query:
                 return [], [], []
             cands = await self.search_models(query, limit=10)
+            # 只保留有 id 的候选，并**保持搜索返回的原始顺序** —— caller 只用
+            # candidates[0]、优先级 hash>filename>fuzzy，顺序即选中依据，绝不能打乱。
+            valid = [c for c in cands if c.get("id")]
+            if not valid:
+                return [], [], []
+
+            # 并发拉取所有候选的文件树（原为串行，单模型兜底可能几十秒阻塞）。
+            # Semaphore(4) 限流避免打爆 HF；gather 保序返回，与 valid 一一对应，
+            # 分类仍严格按原候选顺序进行 —— 只并发 I/O，不改变命中的 repo。
+            sem = asyncio.Semaphore(4)
+
+            async def _fetch_files(rid: str) -> List[Dict]:
+                async with sem:
+                    return await self.list_repo_files(rid)
+
+            files_by_candidate = await asyncio.gather(
+                *(_fetch_files(c["id"]) for c in valid)
+            )
+
             hashed, exacts, fuzzies = [], [], []
-            for candidate in cands:
-                repo_id = candidate.get("id", "")
-                if not repo_id:
-                    continue
-                files = await self.list_repo_files(repo_id)
+            for candidate, files in zip(valid, files_by_candidate):
+                repo_id = candidate["id"]
 
                 # 最高优先级：LFS SHA256 精确比对
                 hash_file = None
@@ -306,8 +324,22 @@ class HuggingFaceClient:
 
     @staticmethod
     def _parse_repo_id(url: str) -> Optional[str]:
-        """从 URL 中提取 repo_id"""
+        """从 URL 中提取 repo_id
+
+        先校验 host 必须是 huggingface.co（或其子域）。否则例如粘进
+        civitai.com/models/123 会被静默拼成畸形 repo_id，误导后续请求 404。
+        """
         url = url.strip().rstrip("/")
+        if not url:
+            return None
+
+        # 补 scheme 让 urlparse 能解析出 hostname（用户常粘无 scheme 的 huggingface.co/...）
+        parse_target = url if "://" in url else f"https://{url}"
+        host = (urlparse(parse_target).hostname or "").lower()
+        # 前导点保证 evilhuggingface.co 之类不被误判为子域
+        if host != "huggingface.co" and not host.endswith(".huggingface.co"):
+            logger.warning("[Noctyra-MM] 非 HuggingFace URL，无法解析 repo: %s", url)
+            return None
 
         # 去掉 base URL
         for prefix in (f"{BASE_URL}/", "huggingface.co/"):
@@ -315,9 +347,10 @@ class HuggingFaceClient:
                 url = url.split(prefix, 1)[-1]
                 break
 
-        # 取前两段作为 user/repo
+        # 取前两段作为 user/repo；两段都需非空且不含 '..'（防畸形/路径穿越）
         parts = url.split("/")
-        if len(parts) >= 2:
+        if (len(parts) >= 2 and parts[0] and parts[1]
+                and ".." not in parts[0] and ".." not in parts[1]):
             return f"{parts[0]}/{parts[1]}"
         return None
 

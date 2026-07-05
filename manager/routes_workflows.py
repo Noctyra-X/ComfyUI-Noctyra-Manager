@@ -30,7 +30,7 @@ import math
 import os
 from aiohttp import web
 
-from .routes_common import _safe_handler, get_manager, logger, parse_int, path_within_roots
+from .routes_common import _safe_handler, get_manager, logger, parse_int, path_within_roots, spawn_background
 from .image_meta import extract_image_meta
 from .routes_workflows_common import (
     _enrich_resources,  # noqa: F401 给老调用点留一手
@@ -163,7 +163,8 @@ async def api_wf_gallery_folders(request):
     mgr = get_manager()
     loop = asyncio.get_running_loop()
     counts = await loop.run_in_executor(None, mgr.db.gallery_dir_counts)
-    tree = build_folder_tree(mgr.config, counts)
+    # build_folder_tree 会对每个注册根做 os.scandir，慢盘/大目录会阻塞事件循环 → 卸载线程池
+    tree = await loop.run_in_executor(None, build_folder_tree, mgr.config, counts)
     return web.json_response({
         "success": True, "folders": tree,
         "scanning": _GALLERY_SCAN["running"], "last_scan": _GALLERY_SCAN["result"],
@@ -191,7 +192,9 @@ async def api_wf_gallery_scan(request):
         finally:
             _GALLERY_SCAN["running"] = False
 
-    asyncio.create_task(_run())
+    # 别用裸 asyncio.create_task：任务可能被 GC 回收 → _run 的 finally 不执行 →
+    # running 永远 True，"扫描中"卡死需重启。spawn_background 持引用直到任务结束。
+    spawn_background(_run())
     return web.json_response({"success": True, "started": True})
 
 
@@ -312,19 +315,19 @@ async def api_wf_gallery_delete(request):
         return web.json_response({"success": False, "error": "not found"})
 
     if delete_file and image.get("file_path"):
-        # 安全：校验文件仍在已注册的图库根内（含内置库 + 缓存），防 Billfish 记录里
-        # 残留的库外路径被用来删任意文件
-        gallery_roots = [f.get("path") for f in mgr.config.gallery_folders if f.get("path")]
-        gallery_roots.append(mgr.config.cache_dir)
-        if not path_within_roots(image["file_path"], gallery_roots):
-            logger.warning("[Noctyra-WF] 删除拒绝：路径 %s 不在图库范围内", image["file_path"])
-            return web.json_response({"success": False, "error": "路径不在允许范围内"})
-        try:
-            if os.path.exists(image["file_path"]):
-                os.remove(image["file_path"])
-                logger.info("[Noctyra-WF] 已删除图片文件: %s", image["file_path"])
-        except OSError as e:
-            logger.warning("[Noctyra-WF] 删除文件失败: %s", e)
+        # 数据安全：只删 App 自己存的副本（内置图库目录 / 缓存目录）。用户在 Billfish
+        # 注册目录里的图是唯一原件，一律只删索引、绝不碰磁盘——防一次点击就永久删掉
+        # 用户的原图（这些目录是 ComfyUI output 等真实目录，无回收站）。
+        app_owned_roots = [r for r in (mgr.config.workflow_gallery_dir, mgr.config.cache_dir) if r]
+        if path_within_roots(image["file_path"], app_owned_roots):
+            try:
+                if os.path.exists(image["file_path"]):
+                    os.remove(image["file_path"])
+                    logger.info("[Noctyra-WF] 已删除 App 副本文件: %s", image["file_path"])
+            except OSError as e:
+                logger.warning("[Noctyra-WF] 删除文件失败: %s", e)
+        else:
+            logger.info("[Noctyra-WF] 用户原件受保护，仅删索引不删磁盘: %s", image["file_path"])
 
     mgr.db.delete_workflow_image(int(image_id))
     return web.json_response({"success": True})
@@ -349,15 +352,21 @@ async def api_wf_check_resources(request):
 
         local = None
 
+        # 客户端传来的 id 可能是非数字字符串，裸 int() 会 500；parse_int 非法即跳过该次查库
+        # （与 _resource_is_local 的容错一致），仍会回退 model_id / name 匹配。
         if version_id:
-            rows = mgr.db.query_by_version_id(int(version_id))
-            if rows:
-                local = rows[0]
+            vid = parse_int(version_id)
+            if vid is not None:
+                rows = mgr.db.query_by_version_id(vid)
+                if rows:
+                    local = rows[0]
 
         if not local and model_id:
-            rows = mgr.db.query_by_model_id(int(model_id))
-            if rows:
-                local = rows[0]
+            mid = parse_int(model_id)
+            if mid is not None:
+                rows = mgr.db.query_by_model_id(mid)
+                if rows:
+                    local = rows[0]
 
         if not local and name:
             base_name = name.split(".")[0].strip()
@@ -455,12 +464,12 @@ async def api_wf_import_local(request):
 async def api_wf_update_info(request):
     """更新图库记录的名称和标签"""
     data = await request.json()
-    image_id = data.get("id")
-    if not image_id:
-        return web.json_response({"success": False, "error": "缺少 id"})
+    image_id = parse_int(data.get("id"))
+    if image_id is None:
+        return web.json_response({"success": False, "error": "无效的 id"}, status=404)
 
     mgr = get_manager()
-    image = mgr.db.get_workflow_image(int(image_id))
+    image = mgr.db.get_workflow_image(image_id)
     if not image:
         return web.json_response({"success": False, "error": "not found"})
 
@@ -477,7 +486,7 @@ async def api_wf_update_info(request):
         updates["user_nsfw"] = 1 if data["user_nsfw"] else 0
 
     if updates:
-        mgr.db.update_workflow_image(int(image_id), updates)
+        mgr.db.update_workflow_image(image_id, updates)
 
     return web.json_response({"success": True})
 
@@ -503,6 +512,16 @@ async def api_model_recipes(request):
     return web.json_response({"success": True, "recipes": recipes})
 
 
+def _gallery_serve_roots(mgr):
+    """图库 serve / copy 端点允许读取文件的根目录白名单：所有注册文件夹（含内置
+    「下载/导入」目录）+ 缓存目录。防残留/陈旧 DB 记录借图片服务把库外任意文件读出去
+    （与 gallery_delete 的 path_within_roots 防护对齐）。"""
+    roots = [f.get("path") for f in mgr.config.gallery_folders if f.get("path")]
+    if mgr.config.cache_dir:
+        roots.append(mgr.config.cache_dir)
+    return roots
+
+
 @_safe_handler
 async def api_wf_serve_image(request):
     """本地图库图片服务"""
@@ -517,6 +536,11 @@ async def api_wf_serve_image(request):
 
     file_path = image["file_path"]
     if not os.path.isfile(file_path):
+        return web.Response(status=404)
+
+    # 白名单校验：残留/陈旧记录的 file_path 可能指向注册文件夹外的任意文件，
+    # 未落在允许根内一律 404，别把库外文件通过图片服务读出去。
+    if not path_within_roots(file_path, _gallery_serve_roots(mgr)):
         return web.Response(status=404)
 
     # 图库卡片用 480px WebP 缩略图（原图保持不动，详情/放大拿原图）
@@ -578,6 +602,10 @@ async def api_wf_copy_to_input(request):
     src = image["file_path"]
     if not os.path.isfile(src):
         return web.json_response({"success": False, "error": "源文件已丢失"}, status=404)
+
+    # 白名单校验：残留/陈旧记录可能指向注册文件夹外的任意文件，拒绝把库外文件拷进 input。
+    if not path_within_roots(src, _gallery_serve_roots(mgr)):
+        return web.json_response({"success": False, "error": "文件不在图库范围内"}, status=404)
 
     target_dir = os.path.join(_comfyui_input_dir(), INPUT_SUBDIR)
     try:

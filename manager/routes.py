@@ -288,6 +288,16 @@ _ALLOWED_ORIGIN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 有副作用的 GET 端点：会消耗 CivitAI API 配额 / 下载任意外链填缓存 / 打 GitHub。
+# GET 请求浏览器不发 Origin（空 Origin 会被放行），无法用 Origin 校验防 CSRF；
+# 改查 Sec-Fetch-Site（跨站页面无法伪造）：值为 'cross-site' 即拒，
+# same-origin/same-site/none 放行；非浏览器客户端（curl 等）无此头 → 放行。
+_CSRF_PROTECTED_GET_PATHS = frozenset({
+    "/api/noctyra/check-model-updates",
+    "/api/noctyra/check-update",
+    "/api/noctyra/preview",
+})
+
 
 @web.middleware
 async def _noctyra_csrf_middleware(request: web.Request, handler):
@@ -296,6 +306,7 @@ async def _noctyra_csrf_middleware(request: web.Request, handler):
     - 只作用于 /api/noctyra/* 路径，避免影响 ComfyUI 其他端点
     - 空 Origin 放行（curl / 扩展 declarativeNetRequest 剥离 Origin / 非浏览器客户端）
     - 浏览器跨源 POST 会自动带 Origin → 恶意站点被拒
+    - 有副作用的 GET 端点额外查 Sec-Fetch-Site（GET 不发 Origin，无法用 Origin 校验）
     """
     if not request.path.startswith("/api/noctyra/"):
         return await handler(request)
@@ -308,6 +319,18 @@ async def _noctyra_csrf_middleware(request: web.Request, handler):
             )
             return web.json_response(
                 {"success": False, "error": "forbidden origin"},
+                status=403,
+            )
+    elif request.method == "GET" and request.path in _CSRF_PROTECTED_GET_PATHS:
+        # 浏览器 GET 必发 Sec-Fetch-Site；cross-site = 由其它站点页面发起 → 拒。
+        # 头缺失（老浏览器 / curl / 非浏览器客户端）放行，避免误伤合法调用。
+        if request.headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+            logger.warning(
+                "[Noctyra-MM] 拒绝跨站 GET (CSRF 防御): %s %s",
+                request.method, request.path,
+            )
+            return web.json_response(
+                {"success": False, "error": "cross-site request blocked"},
                 status=403,
             )
     return await handler(request)
