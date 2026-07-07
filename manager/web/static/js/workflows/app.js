@@ -412,7 +412,7 @@ function placeGalleryCard(img) {
 function relayoutGalleryMasonry() {
     const grid = document.getElementById('gallery-grid');
     if (!grid || !loadedGalleryImages.length) return;
-    if (galleryVideoObserver) galleryVideoObserver.disconnect();
+    if (galleryVideoObserver) { galleryVideoObserver.disconnect(); _wfVideoRatios.clear(); }
     setupMasonry(grid);
     const all = loadedGalleryImages;
     let i = 0;
@@ -445,20 +445,45 @@ function onGalleryResize() {
 // 只播放进入视口的图库视频：避免几十个视频同时解码/播放拖垮滚动。
 // 连续流下不再整盘 disconnect，只观察新追加进来的视频。
 let galleryVideoObserver = null;
+const _wfVideoRatios = new Map();   // <video> → 最新可见比例（只保留当前可见的）
+let _wfVideoPaused = false;         // 详情弹窗打开时暂停整个图库视频，把连接让给详情
+
+// 在所有"当前可见"的视频里只播放最居中（可见比例最高）的那一个，其余暂停。
+// 关键：同一时刻最多 1 路视频流。多个 loop 视频各占一条 HTTP 连接持续下载，会把浏览器
+// 对本站 ~6 条连接打满，导致点开详情时 fetch/大图拿不到连接而空白——这是"点进去空白"的主因。
+function _updateGalleryVideoPlayback() {
+    let best = null, bestRatio = 0;
+    for (const [v, ratio] of _wfVideoRatios) {
+        if (ratio > bestRatio) { bestRatio = ratio; best = v; }
+    }
+    for (const [v] of _wfVideoRatios) {
+        const shouldPlay = !_wfVideoPaused && v === best && bestRatio > 0.1;
+        if (shouldPlay) { if (v.paused) v.play().catch(() => {}); }
+        else if (!v.paused) v.pause();
+    }
+}
 function ensureGalleryVideoObserver() {
     if (!galleryVideoObserver) {
+        // 多档阈值才能比较"谁更居中"；不加 rootMargin → 视口外不预载视频，省连接
         galleryVideoObserver = new IntersectionObserver((entries) => {
             for (const e of entries) {
-                if (e.isIntersecting) { e.target.play().catch(() => {}); }
-                else { e.target.pause(); }
+                if (e.isIntersecting) _wfVideoRatios.set(e.target, e.intersectionRatio);
+                else { _wfVideoRatios.delete(e.target); if (!e.target.paused) e.target.pause(); }
             }
-        }, { rootMargin: '150px' });
+            _updateGalleryVideoPlayback();
+        }, { threshold: [0, 0.1, 0.25, 0.5, 0.75, 1] });
     }
     return galleryVideoObserver;
 }
 function observeGalleryVideosIn(container) {
     const ob = ensureGalleryVideoObserver();
     container.querySelectorAll('video').forEach(v => ob.observe(v));
+}
+// 详情弹窗开/关调用：开→暂停所有图库视频释放连接；关→恢复按可见度自动播放
+function setGalleryVideoPaused(paused) {
+    _wfVideoPaused = paused;
+    if (paused) { for (const [v] of _wfVideoRatios) { if (!v.paused) v.pause(); } }
+    else _updateGalleryVideoPlayback();
 }
 
 function galleryCardHtml(img) {
@@ -598,7 +623,7 @@ async function loadGallery() {
             return;
         }
         empty.style.display = 'none';
-        if (galleryVideoObserver) galleryVideoObserver.disconnect();  // 旧视频随重建列清掉
+        if (galleryVideoObserver) { galleryVideoObserver.disconnect(); _wfVideoRatios.clear(); }  // 旧视频随重建列清掉
         setupMasonry(grid);   // 清空 + 按当前宽度铺列
         appendGalleryChunk(grid, res.images);
     } catch (e) {
@@ -835,6 +860,78 @@ function setupBatchImport() {
 
 document.addEventListener('DOMContentLoaded', () => {
     initFocusTrap();
+
+    // ——— 记住浏览位置：刷新后恢复上次的筛选/文件夹/搜索/滚动（sessionStorage，仅本标签页）———
+    // 从 gallery-grid 向上找真正滚动的祖先容器（图库滚的是 .wf-main 之类，非 window）。
+    const _wfScrollEl = () => {
+        const main = document.querySelector('.wf-main');   // 已知滚动容器（overflow-y:auto），直接用最稳
+        if (main) return main;
+        // 兜底：从 gallery-grid 向上找滚动祖先
+        let el = document.getElementById('gallery-grid');
+        while (el && el !== document.body) {
+            const oy = getComputedStyle(el).overflowY;
+            if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 4) return el;
+            el = el.parentElement;
+        }
+        return document.scrollingElement || document.documentElement;
+    };
+    // 恢复筛选变量（放在 loadRuntimeInfo→loadGallery 之前，首次加载即用这些值；chips/侧栏随后读变量自动高亮）
+    let _wfRestoreScroll = 0;
+    try {
+        const saved = JSON.parse(sessionStorage.getItem('noctyra_wf_view') || 'null');
+        if (saved && saved.f) {
+            const f = saved.f;
+            gallerySearch = f.search || '';
+            galleryTag = f.tag || '';
+            galleryFormat = f.format || '';
+            galleryFavOnly = !!f.fav;
+            galleryResourcesFilter = f.resources || '';
+            galleryWorkflowOnly = !!f.workflow;
+            galleryFolder = f.folder || '';
+            const si = document.getElementById('gallery-search');
+            if (si) si.value = gallerySearch;
+            _wfRestoreScroll = Number(saved.s) || 0;
+        }
+    } catch (_) { /* 隐私模式/损坏数据，忽略 */ }
+    // 存视图：pagehide 兜底 + 滚动时节流保存（瀑布流下 pagehide 那刻读 scrollTop 时机不稳，边滚边存更可靠）
+    const _saveWfView = () => {
+        try {
+            const sc = _wfScrollEl();
+            sessionStorage.setItem('noctyra_wf_view', JSON.stringify({
+                f: { search: gallerySearch, tag: galleryTag, format: galleryFormat, fav: galleryFavOnly,
+                     resources: galleryResourcesFilter, workflow: galleryWorkflowOnly, folder: galleryFolder },
+                s: sc ? sc.scrollTop : 0,
+            }));
+        } catch (_) { /* 忽略 */ }
+    };
+    window.addEventListener('pagehide', _saveWfView);
+    const _wfMain = document.querySelector('.wf-main');   // 真正滚动的容器（overflow-y:auto）
+    if (_wfMain) {
+        let _svT = null;
+        _wfMain.addEventListener('scroll', () => {
+            if (_svT) return;
+            _svT = setTimeout(() => { _svT = null; _saveWfView(); }, 500);
+        }, { passive: true });
+    }
+    // 恢复滚动：无限滚动首屏内容不够高，先续拉到能滚到原位再设 scrollTop（限次防跑飞）
+    if (_wfRestoreScroll > 0) {
+        let _tries = 0;
+        const _restoreWfScroll = async () => {
+            const sc = _wfScrollEl();
+            if (!sc) return;
+            while (sc.scrollHeight - sc.clientHeight < _wfRestoreScroll && galleryPage < galleryTotalPages && _tries < 30) {
+                _tries++;
+                await loadMoreGallery();
+            }
+            sc.scrollTop = _wfRestoreScroll;
+        };
+        const _wait = setInterval(() => {
+            const grid = document.getElementById('gallery-grid');
+            if (grid && grid.children.length > 0) { clearInterval(_wait); _restoreWfScroll(); }
+        }, 100);
+        setTimeout(() => clearInterval(_wait), 8000);   // 兜底停表
+    }
+
     // 先拉一下运行时信息（civitai_source_host + _runtime_mode 徽章），非阻塞
     loadRuntimeInfo();
     initStandaloneShutdownWarning();
@@ -866,7 +963,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const card = e.target.closest('.wf-gallery-card');
-        if (card) openDetail(card.dataset.id);
+        if (card) { setGalleryVideoPaused(true); openDetail(card.dataset.id); }   // 暂停图库视频，把连接让给详情
     });
 
     // 滚到底自动续拉下一页（替代翻页器，消除"页末补空位"）
@@ -880,6 +977,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadGallery();
         },
         toast: showToast,
+        initial: galleryFolder,   // 恢复上次选中的文件夹并高亮（galleryFolder 已在上方从 sessionStorage 恢复）
     });
 
     // 窗口尺寸变化时按需重排瀑布流（列数变了才整体重排）
@@ -889,9 +987,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const detailOverlay = document.getElementById('detail-overlay');
     document.getElementById('detail-close').addEventListener('click', () => {
         detailOverlay.classList.remove('show');
+        setGalleryVideoPaused(false);
     });
     detailOverlay.addEventListener('click', (e) => {
-        if (e.target === detailOverlay) detailOverlay.classList.remove('show');
+        if (e.target === detailOverlay) { detailOverlay.classList.remove('show'); setGalleryVideoPaused(false); }
     });
 
     // Gallery search
@@ -953,6 +1052,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && detailOverlay.classList.contains('show')) {
             detailOverlay.classList.remove('show');
+            setGalleryVideoPaused(false);
         }
     });
 

@@ -37,9 +37,10 @@ export function getCurrentFolder() {
     return _currentFolder;
 }
 
-export function initFolderSidebar({ onSelect, toast } = {}) {
+export function initFolderSidebar({ onSelect, toast, initial } = {}) {
     _onSelect = onSelect || (() => {});
     _toast = toast || (() => {});
+    if (initial) _currentFolder = initial;   // 恢复上次选中的文件夹（仅高亮，不触发 onSelect 重复加载）
 
     document.getElementById('wf-scan-btn')?.addEventListener('click', doScan);
     document.getElementById('wf-folder-add-btn')?.addEventListener('click', doAddFolder);

@@ -278,7 +278,12 @@ async def api_wf_gallery_detail(request):
         for r in resources
     )
     if needs_fill:
-        enriched = await _enrich_resources(mgr, resources)
+        # 补资源名要联网查 CivitAI，慢/限流时别把详情响应拖住（会表现为点开详情一片空白）。
+        # 最多等 2.5s，超时就先返回（名称留待下次打开时再补），保证详情秒开。
+        try:
+            enriched = await asyncio.wait_for(_enrich_resources(mgr, resources), timeout=2.5)
+        except asyncio.TimeoutError:
+            enriched = None
         if enriched:
             image["resources"] = enriched
             try:

@@ -25,7 +25,7 @@ import { initCardGrid, loadModels, scrollToModel } from './components/card-grid.
 import { initModal, openDetailModal } from './components/modal.js';
 import { initSidebar, loadFolders } from './components/sidebar.js';
 import { initHeader } from './components/header.js';
-import { initFilters, loadBaseModels, loadTags } from './components/filters.js';
+import { initFilters, loadBaseModels, loadTags, collectCurrentFilters, applyFiltersToState } from './components/filters.js';
 import { initSettings } from './components/settings.js';
 import { initContextMenu } from './components/context-menu.js';
 import { initDownload } from './components/download.js';
@@ -292,7 +292,44 @@ async function init() {
 
     updateThemeButton();
     updateSfwButton();
+
+    // ——— 记住浏览位置：刷新后恢复上次的筛选 + 滚动位置（sessionStorage，仅本标签页）———
+    // 恢复放在筛选选项数据(base_model/tag/文件夹)加载完之后，胶囊/侧栏才能正确高亮已选项。
+    let _restoreScroll = 0;
+    try {
+        const saved = JSON.parse(sessionStorage.getItem('noctyra_view') || 'null');
+        if (saved) {
+            if (saved.f) applyFiltersToState(saved.f);   // 恢复筛选并同步 UI（搜索框/胶囊/排序/侧栏）
+            _restoreScroll = Number(saved.s) || 0;
+        }
+    } catch (_) { /* 隐私模式禁用存储 / 数据损坏，忽略 */ }
+
+    // 存：pagehide 捕获刷新/关闭前的最终状态；滚动节流兜底（万一 pagehide 没触发）
+    const _saveView = () => {
+        try {
+            const sc = document.querySelector('.content-area');
+            sessionStorage.setItem('noctyra_view', JSON.stringify({
+                f: collectCurrentFilters(), s: sc ? sc.scrollTop : 0,
+            }));
+        } catch (_) { /* 忽略 */ }
+    };
+    window.addEventListener('pagehide', _saveView);
+    {
+        const sc = document.querySelector('.content-area');
+        let _svt = null;
+        if (sc) sc.addEventListener('scroll', () => {
+            if (_svt) return;
+            _svt = setTimeout(() => { _svt = null; _saveView(); }, 500);
+        }, { passive: true });
+    }
+
     await loadModels();
+
+    // 恢复滚动位置：网格已布局，设 scrollTop 触发虚拟滚动重渲染到原处（双 rAF 等布局稳定）
+    if (_restoreScroll > 0) {
+        const sc = document.querySelector('.content-area');
+        if (sc) requestAnimationFrame(() => requestAnimationFrame(() => { sc.scrollTop = _restoreScroll; }));
+    }
 
     // 深链：?model=<sha256 或 file_path> 自动打开该模型详情弹窗
     // 让工作流图库的资源名链接能"跨页跳转"进来

@@ -151,7 +151,7 @@ export function openDetail(imageId) {
             const mediaTag = isVideo
                 ? `<video src="${imgSrc}" class="wf-preview-img" id="detail-preview-img"
                           controls autoplay muted loop playsinline controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture disableremoteplayback></video>`
-                : `<img src="${imgSrc}" class="wf-preview-img" id="detail-preview-img">`;
+                : `<img src="${imgSrc}?size=card" class="wf-preview-img" id="detail-preview-img">`;   // 先缩略图秒出，原图后台加载再替换
 
             // 格式 + 内嵌元数据分类：一眼看出文件能装什么、能不能拖到画布出节点
             const fmtLabel = ((img.file_name || '').split('.').pop() || (isVideo ? 'video' : 'img')).toUpperCase();
@@ -275,6 +275,17 @@ export function openDetail(imageId) {
                 </div>
             `;
             bindCopyButtons(body);
+
+            // 详情大图：上面先挂了 480px 缩略图（多半已缓存、秒出）。这里后台加载原图，好了再替换。
+            // 避免原图排在图库缩略图/视频请求之后拿不到连接时，详情区一片空白。
+            if (!isVideo) {
+                const pv = body.querySelector('#detail-preview-img');
+                if (pv) {
+                    const full = new Image();
+                    full.onload = () => { if (!isStale()) pv.src = imgSrc; };
+                    full.src = imgSrc;
+                }
+            }
 
             // 参数区 tab 切换（CivitAI 数据 / 图片文件内嵌）
             body.querySelectorAll('.wf-tab').forEach(tab => {

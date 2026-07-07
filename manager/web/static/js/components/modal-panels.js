@@ -505,7 +505,7 @@ function buildHFPanel(model, isActive) {
         ${statParts.length > 0 ? `<div class="info-row"><span class="info-label">统计</span><span class="info-value modal-stats">${statParts.join(' · ')}</span></div>` : ''}
         ${hfLastMod ? `<div class="info-row"><span class="info-label">更新时间</span><span class="info-value">${escapeHtml(hfLastMod.substring(0, 10))}</span></div>` : ''}
         ${gatedBanner}
-        ${hfDesc ? `<div class="info-section"><div class="info-label">描述</div><div class="hf-description">${simpleMarkdown(hfDesc, { baseUrl: model.hf_repo_id ? `https://huggingface.co/${model.hf_repo_id}/resolve/main/` : '' })}</div></div>` : ''}
+        ${hfDesc ? `<div class="info-section"><div class="info-label">描述</div><div class="hf-description">${simpleMarkdown(hfDesc, { baseUrl: descBaseUrl(model) })}</div></div>` : ''}
         ${hfTags && hfTags.length > 0 ? `
             <div class="info-section">
                 <div class="info-label">标签</div>
@@ -533,9 +533,12 @@ function resolveRelativeUrl(src, baseUrl) {
 // 补成绝对地址后经 previewUrl 代理正常加载（否则相对路径解析到本机 → 404 裂图）。
 // CivitAI 描述一般是绝对 URL，不猜（传空基址；解析不出的相对图由 sanitize 兜底移除）。
 function descBaseUrl(model) {
-    const su = (model && model.source_url) || '';
-    if (model && model.source === 'huggingface' && /huggingface\.co/i.test(su)) {
-        return su.replace(/\/+$/, '') + '/resolve/main';
+    if (!model) return '';
+    // HF README 里的相对图片/链接在 <repo>/resolve/main 下解析。优先 hf_url，其次主来源是 HF 时用
+    // source_url —— 都不依赖可能为空的 hf_repo_id（chord 这类绑定未落 repo_id 的模型也能正常解析）。
+    const hf = model.hf_url || (model.source === 'huggingface' ? model.source_url : '');
+    if (hf && /huggingface\.co/i.test(hf)) {
+        return hf.replace(/\/+$/, '') + '/resolve/main';
     }
     return '';
 }
@@ -575,7 +578,11 @@ function sanitizeHtml(html, opts = {}) {
                 return;
             }
             if (origSrc && origSrc.startsWith('http')) {
-                el.setAttribute('src', previewUrl(origSrc));
+                // 有栅格图后缀（jpg/png/webp/gif/avif）的走预览代理（服务端用代理拉取更可靠 + 缓存）；
+                // 无后缀 / SVG（如 shields.io 徽章）直接加载 —— 代理按 URL 后缀猜 MIME，会把无后缀的
+                // SVG 当成 jpeg 返回，浏览器解不了就裂，而且代理本身也不支持 svg。
+                const raster = /\.(jpe?g|png|webp|gif|avif)(\?|#|$)/i.test(origSrc);
+                el.setAttribute('src', raster ? previewUrl(origSrc) : origSrc);
             } else if (origSrc && origSrc.startsWith('data:image/')) {
                 el.setAttribute('src', origSrc);   // 内联图，保留
             } else {

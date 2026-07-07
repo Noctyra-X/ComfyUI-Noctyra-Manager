@@ -398,7 +398,7 @@ export async function loadBaseModels() {
 // ========== 筛选预设 ==========
 
 // 当前 state 中可保存到预设的字段（与后端 _PRESET_FILTER_KEYS 对齐）
-function collectCurrentFilters() {
+export function collectCurrentFilters() {
     const out = {};
     if (state.currentSearch) out.search = state.currentSearch;
     if (state.currentFolder) out.folder = state.currentFolder;
@@ -415,7 +415,7 @@ function collectCurrentFilters() {
 }
 
 // 把预设里的 filters 套用到 state 并刷新各 select 的显示
-function applyFiltersToState(filters) {
+export function applyFiltersToState(filters) {
     const f = filters || {};
     state.currentSearch = f.search || '';
     state.currentFolder = f.folder || '';
