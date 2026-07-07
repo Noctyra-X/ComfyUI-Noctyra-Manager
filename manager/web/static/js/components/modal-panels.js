@@ -293,7 +293,7 @@ function buildCivitaiPanel(model, isActive) {
     // 描述（CivitAI 原始 HTML，安全渲染）
     let descHtml = '';
     if (model.model_description) {
-        const safeHtml = sanitizeHtml(model.model_description);
+        const safeHtml = sanitizeHtml(model.model_description, { baseUrl: descBaseUrl(model) });
         if (safeHtml.trim()) {
             descHtml = `<div class="info-section"><div class="info-label">描述</div><div class="civitai-description">${safeHtml}</div></div>`;
         }
@@ -529,6 +529,17 @@ function resolveRelativeUrl(src, baseUrl) {
     return baseUrl.replace(/\/$/, '') + '/' + cleaned;
 }
 
+// 描述里相对图片/链接的解析基址：HF README 的相对资源在 <repo>/resolve/main 下，
+// 补成绝对地址后经 previewUrl 代理正常加载（否则相对路径解析到本机 → 404 裂图）。
+// CivitAI 描述一般是绝对 URL，不猜（传空基址；解析不出的相对图由 sanitize 兜底移除）。
+function descBaseUrl(model) {
+    const su = (model && model.source_url) || '';
+    if (model && model.source === 'huggingface' && /huggingface\.co/i.test(su)) {
+        return su.replace(/\/+$/, '') + '/resolve/main';
+    }
+    return '';
+}
+
 function sanitizeHtml(html, opts = {}) {
     if (!html) return '';
     const baseUrl = opts.baseUrl || '';
@@ -565,8 +576,12 @@ function sanitizeHtml(html, opts = {}) {
             }
             if (origSrc && origSrc.startsWith('http')) {
                 el.setAttribute('src', previewUrl(origSrc));
-            } else if (origSrc) {
-                el.setAttribute('src', origSrc);
+            } else if (origSrc && origSrc.startsWith('data:image/')) {
+                el.setAttribute('src', origSrc);   // 内联图，保留
+            } else {
+                // 仍是无基址可解析的相对路径 → 加载必 404 裂图，直接移除、不渲染成破图
+                el.remove();
+                return;
             }
             el.style.maxWidth = '100%';
             el.style.borderRadius = '6px';

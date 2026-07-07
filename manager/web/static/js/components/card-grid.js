@@ -261,7 +261,7 @@ function showSkeleton() {
         sk.id = 'card-skeleton';
         sk.className = 'skeleton-grid';
         sk.setAttribute('aria-hidden', 'true');
-        sk.innerHTML = Array.from({ length: 12 },
+        sk.innerHTML = Array.from({ length: 24 },
             () => '<div class="skeleton-card"><div class="skeleton-shimmer"></div></div>').join('');
         gridEl.parentElement.insertBefore(sk, gridEl);
     }

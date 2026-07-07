@@ -139,7 +139,8 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: var(--space-5);
-    max-width: 1800px;
+    /* 不设 max-width：骨架铺满容器，和真实卡片网格一样填到最右（真实网格自带响应式上限，
+       但其容器宽度就是可填区域，骨架跟着容器走即可对齐） */
 }
 .skeleton-grid[hidden] { display: none; }   /* 压过 .skeleton-grid 的 display:grid */
 .skeleton-card {
